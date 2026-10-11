@@ -1,7 +1,7 @@
 # Computational-Statistics-Group-C-
 
 Task 01:
-A,B,C-Zhuoyan by 11th
+A,B-Zhuoyan by 11th
 C,D,E-Elsa by 16th
 
 Task 02:
