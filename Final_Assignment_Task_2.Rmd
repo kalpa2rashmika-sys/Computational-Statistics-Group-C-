@@ -1,0 +1,1194 @@
+---
+title: "Bayesian mixture modelling with MCMC"
+output:
+  html_document:
+    df_print: paged
+date: "2026-10-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#Task 2
+
+
+$$
+\mu_1,\mu_2\overset{\mathrm{ind}}{\sim}N(m_0,s_0^2)
+$$
+The standardized observations have a sample mean of $0$ and a sample variance of $1$. So we choose $m_0 = 0$, because the observations are centred around zero after standardization.
+
+The prior standard deviation $s_0$ have to choose how widely we think the component means can vary around $m_0$. For example, suppose we believe that the component means lie within the interval $[-2,2]$. We can choose $s_0 = 1$, giving the prior distribution
+$\mu_1,\mu_2 \overset{\mathrm{ind}}{\sim} N(0,1^2)$
+For a normal distribution, the approximate 95\% prior interval is
+$$
+\begin{aligned}
+[m_0 - 1.96s_0,\; m_0 + 1.96s_0]
+&= [0 - 1.96(1),\; 0 + 1.96(1)] \\
+&= [-1.96,\; 1.96].
+\end{aligned}
+$$
+Therefore, this prior assigns approximately 95\% probability to each component mean being between $-9.80$ and $9.80$.
+$$
+\pi\sim\operatorname{Beta}(a,b)
+$$
+$0<\pi<1$, therefore all values have to be between 0 and 1. if the prior distribution is beta, then the obvious choice is ${Beta}(1,1)$, which is a uniform prior.
+
+$$
+\sigma^2\sim\operatorname{InvGamma}(\alpha_0,\beta_0)
+$$
+Because the standardized data have overall variance 1, by taking $\sigma^2\sim\operatorname{InvGamma}(2,1)$, which means $\alpha_0=2$ and $\beta_0=1$, gives $E(\sigma^2)=1$
+$$
+E(\sigma^2)=\frac{\beta_0}{\alpha_0-1}=\frac{1}{2-1}=1
+$$
+Also, with shape 2, the inverse-Gamma distribution has substantial uncertainty, including a heavy right tail. 
+
+
+#Part A: Latent-variable representation and Gibbs sampler
+
+(a) Conditional distribution of $Z_i$
+
+Objective is to find the full conditional distribution of
+$Z_i$, given $y_i$, $\mu_1$, $\mu_2$, $\pi$, and $\sigma^2$.
+
+The two-component Gaussian mixture model is
+
+$$
+Y_i\mid Z_i=k\sim N(\mu_k,\sigma^2),
+\qquad k\in\{1,2\}
+$$
+
+Therefore, for component 1,
+
+$$
+Y_i\mid Z_i=1\sim N(\mu_1,\sigma^2)
+$$
+$$
+P(Z_i=1)=\pi
+$$
+
+and for component 2,
+
+$$
+Y_i\mid Z_i=2\sim N(\mu_2,\sigma^2)
+$$
+$$
+P(Z_i=2)=1-\pi
+$$
+
+Using the multiplication rule,
+
+$$
+f(y_i,z_i)=f(y_i\mid z_i)P(Z_i=z_i)
+$$
+
+if $Z_i = 1$:
+\[
+f(y_i,z_i=1)=\pi f_1(y_i)
+\tag{1}
+\]
+
+if $Z_i = 2$:
+\[
+f(y_i,z_i=2)=(1-\pi)f_2(y_i)
+\tag{2}
+\]
+
+For $n$ observations, let $n_1$ denote the number
+of observations allocated to component 1 and $n_2$ denote
+the number allocated to component 2.
+
+Then,
+
+$$
+n_1+n_2=n
+$$
+
+Complete likelihood
+$$
+f(y,z)
+=
+\pi^{n_1}(1-\pi)^{n_2}
+\prod_{i:z_i=1}f_1(y_i)
+\prod_{i:z_i=2}f_2(y_i)
+$$
+
+From Bayes' theorem,
+\[
+P(Z_i=1\mid y_i)
+=
+\frac{f(y_i,Z_i=1)}{f(y_i)}
+\tag{3}
+\]
+
+Total probability,
+\[
+\begin{aligned}
+f(y_i)
+&=f(y_i,Z_i=1)+f(y_i,Z_i=2)\\
+&=\pi f_1(y_i)+(1-\pi)f_2(y_i)
+\end{aligned}
+\tag{4}
+\]
+
+Substituting (1) and (4) into (3),
+
+$$
+\boxed{
+P(Z_i=1\mid y_i)
+=
+\frac{\pi f_1(y_i)}
+{\pi f_1(y_i)+(1-\pi)f_2(y_i)}
+}
+$$
+
+Similarly,
+
+$$
+\boxed{
+P(Z_i=2\mid y_i)
+=
+\frac{(1-\pi)f_2(y_i)}
+{\pi f_1(y_i)+(1-\pi)f_2(y_i)}
+}
+$$
+
+(b) Conditional distribution of $\mu_1$ and $\mu_2$
+
+First, consider the conditional distribution of $\mu_1$.
+
+Objective is to find
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+$$
+
+The prior distribution is
+
+$$
+\mu_1\sim N(m_0,s_0^2)
+$$
+
+From Bayes' theorem,
+\[
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+f(y\mid z,\mu_1,\sigma^2)f(\mu_1)
+\tag{5}
+\]
+
+The normal prior density is
+$$
+f(\mu_1)
+=
+\frac{1}{\sqrt{2\pi_{\mathrm{math}}s_0^2}}
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+$$
+Ignoring constants that do not depend on $\mu_1$,
+\[
+f(\mu_1)
+\propto
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+\tag{6}
+\]
+
+The likelihood contains only observations allocated
+to component 1.
+
+Therefore,
+
+$$
+f(y\mid z,\mu_1,\sigma^2)
+\propto
+\prod_{i:z_i=1}
+\exp\left(
+-\frac{(y_i-\mu_1)^2}{2\sigma^2}
+\right)
+$$
+\[
+f(y\mid z,\mu_1,\sigma^2)
+\propto
+\exp\left(
+-\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}
+{2\sigma^2}
+\right)
+\tag{7}
+\]
+
+Substituting (6) and (7) into (5),
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\left(
+-\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}
+{2\sigma^2}
+\right)
+\times
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+$$
+
+Combining the exponential terms,
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\left[
+-\frac12
+\left(
+\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}{\sigma^2}
++
+\frac{(\mu_1-m_0)^2}{s_0^2}
+\right)
+\right]
+$$
+
+Expanding the squared terms,
+
+$$
+\begin{aligned}
+\sum_{i:z_i=1}(y_i-\mu_1)^2
+&=
+\sum_{i:z_i=1}y_i^2
+-2\mu_1\sum_{i:z_i=1}y_i
++n_1\mu_1^2
+\end{aligned}
+$$
+
+and
+
+$$
+(\mu_1-m_0)^2
+=
+\mu_1^2-2\mu_1m_0+m_0^2
+$$
+
+Removing terms that do not depend on $\mu_1$,
+
+\[
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\Bigg[
+-\left(
+\frac{n_1}{2\sigma^2}
++\frac{1}{2s_0^2}
+\right)\mu_1^2
++
+\left(
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++\frac{m_0}{s_0^2}
+\right)\mu_1
+\Bigg]
+\tag{8}
+\]
+
+Normal density can be written as
+\[
+\begin{aligned}
+f(x)
+&\propto
+\exp\left(
+-\frac{(x-m)^2}{2v}
+\right)
+\\
+&\propto
+\exp\left(
+-\frac{x^2-2xm+m^2}{2v}
+\right)
+\end{aligned}
+\]
+\[
+f(x)
+\propto
+\exp\left(
+-\frac{x^2}{2v}+\frac{m}{v}x
+\right)
+\tag{9}
+\]
+
+Comparing (8) and (9), we obtain
+
+$$
+\frac{1}{2v_1}
+=
+\frac{n_1}{2\sigma^2}
++
+\frac{1}{2s_0^2}
+$$
+
+Therefore,
+
+$$
+\boxed{
+v_1=
+\left(
+\frac{n_1}{\sigma^2}
++
+\frac{1}{s_0^2}
+\right)^{-1}
+}
+$$
+
+Similarly,
+
+$$
+\frac{m_1}{v_1}
+=
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+$$
+
+Therefore,
+
+$$
+\boxed{
+m_1=
+v_1
+\left(
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+\right)
+}
+$$
+
+The conditional distribution for $\mu_1$,
+$$
+\boxed{
+\mu_1\mid y,z,\sigma^2
+\sim N(m_1,v_1)
+}
+$$
+
+Similarly, for $\mu_2$,
+$$
+\boxed{
+\mu_2\mid y,z,\sigma^2
+\sim N(m_2,v_2)
+}
+$$
+
+where
+$$
+\boxed{
+v_2=
+\left(
+\frac{n_2}{\sigma^2}
++
+\frac{1}{s_0^2}
+\right)^{-1}
+}
+$$
+
+and
+$$
+\boxed{
+m_2=
+v_2
+\left(
+\frac{\sum_{i:z_i=2}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+\right)
+}
+$$
+
+
+(c) Conditional distribution of $\pi$
+
+Objective is
+$$
+f(\pi\mid z)
+$$
+
+We know that
+
+$$
+P(Z_i=1)=\pi
+\qquad
+P(Z_i=2)=1-\pi
+$$
+
+Prior distribution
+
+$$
+\pi\sim\operatorname{Beta}(a,b)
+$$
+
+Beta density
+\[
+f(\pi)\propto
+\pi^{a-1}(1-\pi)^{b-1}
+\tag{10}
+\]
+
+Likelihood
+
+\[
+f(z\mid\pi)
+=
+\pi^{n_1}(1-\pi)^{n_2}
+\tag{11}
+\]
+
+From Bayes' theorem,
+
+$$
+f(\pi\mid z)
+\propto
+f(z\mid\pi)f(\pi)
+$$
+
+Substituting (10) and (11),
+
+$$
+\begin{aligned}
+f(\pi\mid z)
+&\propto
+\pi^{n_1}(1-\pi)^{n_2}
+\times
+\pi^{a-1}(1-\pi)^{b-1}
+\\
+&\propto
+\pi^{n_1+a-1}(1-\pi)^{n_2+b-1}
+\end{aligned}
+$$
+
+Therefore,
+
+$$
+\boxed{
+\pi\mid z
+\sim
+\operatorname{Beta}(a+n_1,b+n_2)
+}
+$$
+
+
+(d) Conditional distribution of $\sigma^2$
+
+Objective is conditional distribution
+of the variance $\sigma^2$
+
+Prior distribution
+$$
+\sigma^2
+\sim
+\operatorname{InvGamma}(\alpha_0,\beta_0)
+$$
+
+Inverse-Gamma density
+\[
+f(\sigma^2)
+\propto
+(\sigma^2)^{-(\alpha_0+1)}
+\exp\left(
+-\frac{\beta_0}{\sigma^2}
+\right)
+\tag{12}
+\]
+
+Likelihood
+\[
+f(y\mid z,\mu_1,\mu_2,\sigma^2)
+\propto
+(\sigma^2)^{-n/2}
+\exp\left[
+-\frac{
+\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{2\sigma^2}
+\right]
+\tag{13}
+\]
+Where,
+$$
+\mu_{z_i}
+=
+\begin{cases}
+\mu_1, & z_i=1\\
+\mu_2, & z_i=2
+\end{cases}
+$$
+
+From Bayes' theorem,
+
+$$
+f(\sigma^2\mid y,z,\mu_1,\mu_2)
+\propto
+f(y\mid z,\mu_1,\mu_2,\sigma^2)
+f(\sigma^2)
+$$
+
+Substituting (12) and (13),
+
+$$
+f(\sigma^2\mid\cdots)
+\propto
+(\sigma^2)^{-n/2}
+\exp\left[
+-\frac{
+\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{2\sigma^2}
+\right]
+\times
+(\sigma^2)^{-(\alpha_0+1)}
+\exp\left(
+-\frac{\beta_0}{\sigma^2}
+\right)
+$$
+
+Combining the powers and exponential terms,
+
+$$
+f(\sigma^2\mid\cdots)
+\propto
+(\sigma^2)^{-(\alpha_0+n/2+1)}
+\times
+\exp\left[
+-\frac{
+\beta_0+
+\frac12\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{\sigma^2}
+\right]
+$$
+
+This is the kernel of an inverse-Gamma distribution.
+
+Therefore,
+
+$$
+\boxed{
+\sigma^2\mid y,z,\mu_1,\mu_2
+\sim
+\operatorname{InvGamma}
+\left(
+\alpha_0+\frac{n}{2},
+\beta_0+
+\frac12\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+\right)
+}
+$$
+
+Funtion:
+Input	Meaning
+y:	Observed data
+n_iter:	Number of stored MCMC states, including the initial state
+m0:	Prior mean of \(\mu_1,\mu_2\)
+s0:	Prior standard deviation of the means
+a, b:	Beta prior hyperparameters
+alpha0, beta0:	Inverse-Gamma prior hyperparameters
+mu1_init:	Starting value for \(\mu_1\)
+mu2_init:	Starting value for \(\mu_2\)
+pi_init:	Starting value for \(\pi\)
+sigma2_init:	Starting value for \(\sigma^2\)
+
+```{r T2 A}
+#Gibbs sampler
+
+
+gibbs_sampler <- function(y, n_iter = 12000,
+                          m0 = 0, s0 = 1,
+                          a = 1, b = 1,
+                          alpha0 = 2, beta0 = 1,
+                          mu1_init = -1,
+                          mu2_init = 1,
+                          pi_init = 0.5,
+                          sigma2_init = 1) {
+
+  n <- length(y)
+
+  # Store posterior draws
+  mu1 <- numeric(n_iter)
+  mu2 <- numeric(n_iter)
+  pi <- numeric(n_iter)
+  sigma2 <- numeric(n_iter)
+
+  # Store latent allocations
+  Z <- matrix(NA_integer_, nrow = n_iter, ncol = n)
+
+  # Initial parameter values
+  mu1[1] <- mu1_init
+  mu2[1] <- mu2_init
+  pi[1] <- pi_init
+  sigma2[1] <- sigma2_init
+
+  # Initial allocations
+  Z[1, ] <- ifelse(y < (mu1_init + mu2_init)/2, 1L, 2L) 
+
+  for (t in 2:n_iter) {
+    
+    ##########################################
+    # (a): Update Z_i
+    ##########################################
+
+    #Calculate the log density for component 1
+    log_f1 <- dnorm(
+      y, mean = mu1[t-1],
+      sd = sqrt(sigma2[t-1]),
+      log = TRUE
+    )
+
+    ##Calculate the log density for component 2
+    log_f2 <- dnorm(
+      y, mean = mu2[t-1],
+      sd = sqrt(sigma2[t-1]),
+      log = TRUE
+    )
+
+    # Conditional probability of component 1 (P(Z=1|y))
+    w <- plogis(
+      log(pi[t-1]) + log_f1 -
+      log1p(-pi[t-1]) - log_f2
+    )
+
+    Z[t, ] <- ifelse(runif(n) < w, 1L, 2L) #if P(Z|y)<pi, assigned to 1L, otherwise assigned to 2L
+
+    z <- Z[t, ]
+
+    n1 <- sum(z == 1)
+    n2 <- sum(z == 2)
+
+    ##########################################
+    # (b1): Update mu1
+    ##########################################
+
+    v1 <- 1 / (n1 / sigma2[t-1] + 1 / s0^2) #conditional variance
+    m1 <- v1 * ((sum(y[z == 1]) / sigma2[t-1]) + (m0 / s0^2)) #conditional mean
+    
+    mu1[t] <- rnorm(1, mean = m1, sd = sqrt(v1)) #Generate a new value for \(\mu_1\)
+
+    ##########################################
+    # (b2): Update mu2
+    ##########################################
+
+    v2 <- 1 / (n2 / sigma2[t-1] + 1 / s0^2) #conditional variance
+    m2 <- v2 * ((sum(y[z == 2]) / sigma2[t-1]) +(m0 / s0^2)) #conditional mean
+
+    mu2[t] <- rnorm(1, mean = m2, sd = sqrt(v2)) #Generate a new value for \(\mu_2\)
+
+    ##########################################
+    # (c): Update pi
+    ##########################################
+
+    pi[t] <- rbeta(1, shape1 = a + n1, shape2 = b + n2)
+
+    ##########################################
+    # Step 5: Update sigma2
+    ##########################################
+
+    mu_z <- ifelse(z == 1, mu1[t], mu2[t]) #assign mean corresponding to each observation
+    alpha_n <- alpha0 + n / 2
+    beta_n <- beta0 + 0.5 * sum((y - mu_z)^2)
+
+    # Inverse-Gamma random variable
+    sigma2[t] <- 1 / rgamma(1, shape = alpha_n, rate = beta_n)
+  }
+
+  return(list(draws = data.frame(mu1, mu2, pi, sigma2), Z = Z))
+}
+
+```
+
+#Part B
+
+```{r T2 B1}
+
+simulate_mixture <- function(n, mu1, mu2, sigma2, pi) {
+
+  # Generate component allocations
+  z <- ifelse(runif(n) < pi, 1L, 2L)
+
+  # Generate observations from their components
+  y <- rnorm(n, mean = ifelse(z == 1, mu1, mu2), sd = sqrt(sigma2)  )
+
+  return(list(y = y, z = z))
+}
+
+
+set.seed(123)
+
+# Mixture 1: Clearly separated
+data_sep <- simulate_mixture(
+  n = 200,
+  mu1 = -3,
+  mu2 = 3,
+  sigma2 = 1,
+  pi = 0.5
+)
+
+# Mixture 2: Overlapping
+data_overlap <- simulate_mixture(
+  n = 200,
+  mu1 = -0.5,
+  mu2 = 0.5,
+  sigma2 = 1,
+  pi = 0.5
+)
+
+par(mfrow = c(1, 2))
+
+hist(data_sep$y,
+     breaks = 25,
+     main = "Mixture 1:\nClearly Separated",
+     xlab = "Y",
+     probability = TRUE)
+
+hist(data_overlap$y,
+     breaks = 25,
+     main = "Mixture 2: \nSubstantially Overlapping",
+     xlab = "Y",
+     probability = TRUE)
+
+par(mfrow = c(1, 1))
+
+```
+
+On the mixture 1, two populations create two peaks. So the observations provide strong information about their allocations.
+On the mixture 2, populations produce one heavily overlapping mixture. So observed data provide weaker information about the separate component means and allocations.
+
+In the mixture 1, an observation of \(-3\) is very likely to belong to component 1, while \(+3\) is very likely to belong to component 2. But in mixture 2, an observation of \(0\) is equally likely to have come from either component. Therefore the mixture 2, which is substantial overlap case is the more difficult MCMC mixing.
+
+
+```{r T2 B2}
+# Initial values for the eight chains
+initial_values <- list(
+  c(-0.5, 0.5),
+  c(0.5, -0.5),
+  c(-3, 3),
+  c(3, -3)
+)
+
+run_chains <- function(y, n_iter = 12000) {
+
+  chains <- vector("list", 4)
+
+  for (j in 1:4) {
+
+    chains[[j]] <- gibbs_sampler(
+      y = y,
+      n_iter = n_iter,
+      m0 = 0,
+      s0 = 5,
+      a = 1,
+      b = 1,
+      alpha0 = 2,
+      beta0 = 1,
+      mu1_init = initial_values[[j]][1],
+      mu2_init = initial_values[[j]][2],
+      pi_init = 0.5,
+      sigma2_init = 1
+    )
+  }
+
+  return(chains)
+}
+
+#run both simulations
+set.seed(111)
+chains_sep <- run_chains(data_sep$y)
+
+set.seed(222)
+chains_overlap <- run_chains(data_overlap$y)
+
+#Remove burn in
+burnin <- 2000
+
+keep_sep <- lapply(chains_sep, function(x) {x$draws[-(1:burnin), ]})
+keep_overlap <- lapply(chains_overlap, function(x) {x$draws[-(1:burnin), ]})
+
+```
+
+```{r T2 B3}
+par(mfrow = c(2, 4))
+
+# Clearly separated
+for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
+  plot(
+    keep_sep[[1]][[parameter]],
+    type = "l",
+    main = paste("Separated:", parameter),
+    xlab = "Iteration",
+    ylab = parameter
+  )
+}
+
+# Overlapping
+for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
+  plot(
+    keep_overlap[[1]][[parameter]],
+    type = "l",
+    main = paste("Overlapping:", parameter),
+    xlab = "Iteration",
+    ylab = parameter
+  )
+}
+
+par(mfrow = c(1, 1))
+
+```
+
+On clearly separated case \(\mu_1,\mu_2\), \(\pi\), \(\sigma^2\) seems to be concentrated around stable values.
+
+On Overlapping case \(\mu_1,\mu_2\) seems to be stay relatively close to zero, but there are several very large spikes. On \(\pi\), mixing proportion moves over a wide range compare to the clearly separated case. but \(\sigma^2\) seems to be concentrated around stable value.
+
+```{r T2 B4}
+plot_chains <- function(chains, parameter, title) {
+
+  values <- lapply(chains, function(x) x[[parameter]])
+
+  plot(values[[1]], type = "l",
+       ylim = range(unlist(values)),
+       col = 1,
+       main = title,
+       xlab = "Iteration",
+       ylab = parameter)
+
+  for (j in 2:length(values)) {
+    lines(values[[j]], col = j)
+  }
+
+  legend("topright",
+         legend = paste("Chain", 1:length(values)),
+         col = seq_along(values),
+         lty = 1,
+         cex = 0.8)
+}
+
+```
+
+
+
+```{r T2 B5}
+
+
+plot_chains(
+  keep_sep,
+  parameter = "mu1",
+  title = "Separated: mu1"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "mu1",
+  title = "Overlapping: mu1"
+)
+
+```
+
+```{r T2 B6}
+
+
+plot_chains(
+  keep_sep,
+  parameter = "mu2",
+  title = "Separated: mu2"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "mu2",
+  title = "Overlapping: mu2"
+)
+
+```
+
+```{r T2 B7}
+
+plot_chains(
+  keep_sep,
+  parameter = "pi",
+  title = "Separated: pi"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "pi",
+  title = "Overlapping: pi"
+)
+
+
+```
+
+```{r T2 B8}
+
+plot_chains(
+  keep_sep,
+  parameter = "sigma2",
+  title = "Separated: sigma2"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "sigma2",
+  title = "Overlapping: sigma2"
+)
+
+
+```
+
+#Part C
+
+#Q1
+
+```{r T2 C0}
+data_sep_c <- simulate_mixture(
+  n = 200,
+  mu1 = -3,
+  mu2 = 3,
+  sigma2 = 1,
+  pi = 0.3
+)
+#change the pi to 0.3, so that it make it easier to identify the  label switching
+
+set.seed(111)
+chains_sep_c <- run_chains(data_sep_c$y)
+
+keep_sep_c <- lapply(chains_sep_c, function(x) {x$draws[-(1:burnin), ]})
+
+```
+
+```{r T2 C1}
+
+#Label switching for means
+
+draws <- chains_sep_c[[1]]$draws
+
+burnin <- 2000
+draws <- draws[-(1:burnin), ]
+
+par(mfrow = c(1, 2))
+
+for (j in 1:2) {
+
+  d <- chains_sep_c[[j]]$draws
+  d <- d[-(1:burnin), ]
+
+  plot(d$mu1,
+       type = "l",
+       col = "blue",
+       ylim = range(d$mu1, d$mu2),
+       main = paste("Chain", j),
+       xlab = "Iteration",
+       ylab = "Mean")
+
+  lines(d$mu2, col = "red")
+  
+  
+}
+
+
+#Label switching for pi
+
+par(mfrow = c(1, 2))
+
+for (j in 1:2) {
+
+  d <- chains_sep_c[[j]]$draws
+  d <- d[-(1:burnin), ]
+
+  plot(
+    d$pi,
+    type = "l",
+    col = "blue",
+    ylim = c(0, 1),
+    main = paste("Chain", j, ": pi"),
+    xlab = "Iteration",
+    ylab = "pi"
+  )
+
+  abline(h = 0.5, col = "red", lty = 2)
+}
+
+```
+
+When \(\mu_1\approx-3\) and \(\mu_2\approx3\),\(\pi\) is around 0.3.
+When \(\mu_1\approx3\) and \(\mu_2\approx-3\), \(\pi\) is around 0.7. around 0.7. So that when the label switching occurs within the chain, the two traces have been exchanged their positions.
+
+#Q2:Why can ordinary posterior summaries of \(\mu_1), \(\mu_2), and \(\pi\) be misleading when labels
+switch?
+
+Because the Gibbs sampler can exchange the labels of the two components, even though the overall mixture distribution remains unchanged, ordinary posterior summaries can be misleading. When we calculate posterior means using samples from different labelling arrangements, we may average values from the lower mean and higher mean components together. As a result, the posterior means may not accurately represent the individual components.
+
+Take the two components true parameters as:
+$$
+\mu_1=-3,\qquad \mu_2=3,\qquad \pi=0.3
+$$
+This means, Component 1 has mean \(-3\) and weight 0.3.
+and Component 2 has mean \(3\) and weight 0.7.
+But the Gibbs sampler also can produce:
+$$
+\mu_1=3,\qquad \mu_2=-3,\qquad \pi=0.7
+$$
+These two sets of parameters describe exactly the same mixture distribution. Only the labels have changed.
+
+If the Gibbs sampler produces these posterior samples
+Iteration	\begin{table}[H]
+\centering
+\begin{tabular}{cccc}
+\hline
+\textbf{Iteration} & $\boldsymbol{\mu_1}$ & $\boldsymbol{\mu_2}$ & $\boldsymbol{\pi}$ \\
+\hline
+1 & -3 & 3 & 0.3 \\
+2 & -3 & 3 & 0.3 \\
+3 & 3 & -3 & 0.7 \\
+4 & 3 & -3 & 0.7 \\
+\hline
+\end{tabular}
+\end{table}
+
+Now if we calculate the posterior mean of each parameter.
+
+For \(\mu_1\):
+$$
+E(\mu_1\mid y)\approx\frac{-3-3+3+3}{4}
+$$
+$$
+E(\mu_1\mid y)\approx0
+$$
+
+For \(\mu_2\):
+$$
+E(\mu_2\mid y)\approx\frac{3+3-3-3}{4}
+$$
+$$
+E(\mu_2\mid y)\approx0
+$$
+
+For \(\pi\):
+$$
+E(\pi\mid y)\approx\frac{0.3+0.3+0.7+0.7}{4}
+$$
+$$
+\boxed{E(\pi\mid y)\approx0.5}
+$$
+
+Our posterior summaries suggest:
+$$
+\mu_1\approx0,\qquad\mu_2\approx0,\qquad\pi\approx0.5
+$$
+
+But the actual mixture contains:
+$$
+\mu_1=-3,\qquad\mu_2=3,\qquad\pi=0.3
+$$
+
+
+#Q3: Which posterior quantities remain meaningful without assigning fixed labels to the components?
+
+1)Overall mixture mean
+$$
+E(Y)=\pi\mu_1+(1-\pi)\mu_2
+$$
+
+after switching the label
+$$
+E(Y)=(1-\pi)\mu_2+\pi\mu_1
+$$
+which is the same.
+
+2)Overall mixture variance
+
+Even we switch the labels, neither \(\pi(1-\pi)\) nor \((\mu_1-\mu_2)^2\) changes
+$$
+\operatorname{Var}(Y)=
+\sigma^2+\pi(1-\pi)(\mu_1-\mu_2)^2
+$$
+
+3)Mixture density
+
+Switching the label will not change the total density
+$$
+f(y)=\pi f_1(y)+(1-\pi)f_2(y)
+$$
+
+
+#Q4
+
+```{r T2 C2}
+
+
+all_draws <- do.call(
+  rbind,
+  lapply(chains_sep_c, function(x) {
+    x$draws[-(1:burnin), ]
+  })
+)
+
+
+# Post-process posterior samples
+ordered_draws <- data.frame(
+
+  mu_low = pmin(all_draws$mu1, all_draws$mu2),
+  mu_high = pmax(all_draws$mu1, all_draws$mu2),
+
+  pi_low = ifelse(
+    all_draws$mu1 < all_draws$mu2,
+    all_draws$pi,
+    1 - all_draws$pi
+  ),
+
+  sigma2 = all_draws$sigma2
+)
+
+#plot
+
+par(mfrow = c(2, 2))
+
+hist(
+  all_draws$mu1,
+  breaks = 50,
+  main = "Original mu1",
+  xlab = "mu1"
+)
+
+hist(
+  all_draws$mu2,
+  breaks = 50,
+  main = "Original mu2",
+  xlab = "mu2"
+)
+
+hist(
+  ordered_draws$mu_low,
+  breaks = 50,
+  main = "Lower Component Mean",
+  xlab = "mu_low"
+)
+
+hist(
+  ordered_draws$mu_high,
+  breaks = 50,
+  main = "Higher Component Mean",
+  xlab = "mu_high"
+)
+
+par(mfrow = c(1, 1))
+
+
+#Posterior means
+
+# Before post-processing
+colMeans(all_draws)
+
+# After post-processing
+colMeans(ordered_draws)
+
+
+```
+###################################################################
+
+
+
+```{r T2 D}
+
+
+```
+
