@@ -939,7 +939,7 @@ that makes the uncertainty and variability of the simulation visible.
 "Throughout the simulations we considered model (1) with p = 10 and q = 5 where the five signal components are ARMA(0.6; (0, -0.4)), ARMA((0.4, 0.1, 0.3); (0.2, 0.4)), AR(0.4), MA(0.5, 0.3, 0.1,
 0.2) and AR(0.1, 0.1, 0.3), all having Gaussian innovations. In Setting 1 the five noise components are all Gaussian white noise."
 
-The simulation study will be done by using the same signal generation process as in Nordhausen & Virta, 2018. For process length, $T = 200, 500, 1000, 2000$ were considered. 20 bootstrap samples were used.
+The simulation study will be done by using the same signal generation process as in Nordhausen & Virta, 2018. For process length, $T = 200, 500, 1000, 2000$ were considered. 10 bootstrap samples were used.
 
 First we will define the functions that will be used to generate the signals.
 ```{r}
