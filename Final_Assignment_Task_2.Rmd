@@ -19,14 +19,14 @@ $$
 $$
 The standardized observations have a sample mean of $0$ and a sample variance of $1$. So we choose $m_0 = 0$, because the observations are centred around zero after standardization.
 
-The prior standard deviation $s_0$ have to choose how widely we think the component means can vary around $m_0$. For example, suppose we believe that the component means lie within the interval $[-2,2]$. We can choose $s_0 = 1$, giving the prior distribution
+The prior standard deviation $s_0$ have to choose how widely we think the component means can vary around $m_0$. For example, suppose we believe that the component means lie within the interval $[-10,10]$. We can choose $s_0 = 5$, giving the prior distribution
 $\mu_1,\mu_2 \overset{\mathrm{ind}}{\sim} N(0,1^2)$
 For a normal distribution, the approximate 95\% prior interval is
 $$
 \begin{aligned}
 [m_0 - 1.96s_0,\; m_0 + 1.96s_0]
-&= [0 - 1.96(1),\; 0 + 1.96(1)] \\
-&= [-1.96,\; 1.96].
+&= [0 - 1.96(5),\; 0 + 1.96(5)] \\
+&= [-9.80,\; 9.80].
 \end{aligned}
 $$
 Therefore, this prior assigns approximately 95\% probability to each component mean being between $-9.80$ and $9.80$.
@@ -595,7 +595,7 @@ sigma2_init:	Starting value for \(\sigma^2\)
 
 
 gibbs_sampler <- function(y, n_iter = 12000,
-                          m0 = 0, s0 = 1,
+                          m0 = 0, s0 = 5,
                           a = 1, b = 1,
                           alpha0 = 2, beta0 = 1,
                           mu1_init = -1,
