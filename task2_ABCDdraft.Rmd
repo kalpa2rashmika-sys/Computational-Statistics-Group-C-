@@ -735,7 +735,10 @@ data_overlap <- simulate_mixture(
   pi = 0.5
 )
 
-par(mfrow = c(1, 2))
+
+pdf("Clearly_Separated.pdf", width = 8, height = 6)
+
+par(mar = c(3, 3, 2, 1))
 
 hist(data_sep$y,
      breaks = 25,
@@ -743,13 +746,20 @@ hist(data_sep$y,
      xlab = "Y",
      probability = TRUE)
 
+dev.off()
+
+pdf("Substantially_Overlapping.pdf", width = 8, height = 6)
+
+par(mar = c(3, 3, 2, 1))
+
 hist(data_overlap$y,
      breaks = 25,
      main = "Mixture 2: \nSubstantially Overlapping",
      xlab = "Y",
      probability = TRUE)
 
-par(mfrow = c(1, 1))
+dev.off()
+
 
 ```
 
@@ -809,7 +819,9 @@ keep_overlap <- lapply(chains_overlap, function(x) {x$draws[-(1:burnin), ]})
 ```
 
 ```{r T2 B3}
-par(mfrow = c(2, 4))
+pdf("MCMC.pdf", width = 8, height = 6)
+
+par(mfrow = c(2, 4), mar = c(3, 3, 2, 1))
 
 # Clearly separated
 for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
@@ -833,7 +845,7 @@ for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
   )
 }
 
-par(mfrow = c(1, 1))
+dev.off()
 
 ```
 
@@ -845,6 +857,9 @@ On Overlapping case \(\mu_1,\mu_2\) seems to be stay relatively close to zero, b
 plot_chains <- function(chains, parameter, title) {
 
   values <- lapply(chains, function(x) x[[parameter]])
+  
+  old_par <- par(no.readonly = TRUE)
+  par(mar = c(3, 3, 2, 7), xpd = NA)
 
   plot(values[[1]], type = "l",
        ylim = range(unlist(values)),
@@ -856,12 +871,23 @@ plot_chains <- function(chains, parameter, title) {
   for (j in 2:length(values)) {
     lines(values[[j]], col = j)
   }
+  
+  par(xpd = TRUE)
 
-  legend("topright",
-         legend = paste("Chain", 1:length(values)),
-         col = seq_along(values),
-         lty = 1,
-         cex = 0.8)
+  legend(
+    x = par("usr")[2],
+    y = par("usr")[4],
+    legend = paste("Chain", 1:length(values)),
+    col = seq_along(values),
+    lty = 1,
+    cex = 0.8,
+    bty = "o",
+    xjust = 0,
+    yjust = 1
+  )
+
+  par(old_par)
+
 }
 
 ```
@@ -870,6 +896,7 @@ plot_chains <- function(chains, parameter, title) {
 
 ```{r T2 B5}
 
+pdf("MCMC_mu1.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -883,9 +910,13 @@ plot_chains(
   title = "Overlapping: mu1"
 )
 
+dev.off()
+
 ```
 
 ```{r T2 B6}
+
+pdf("MCMC_mu2.pdf", width = 8, height = 6)
 
 
 plot_chains(
@@ -900,9 +931,13 @@ plot_chains(
   title = "Overlapping: mu2"
 )
 
+dev.off()
+
 ```
 
 ```{r T2 B7}
+
+pdf("MCMC_pi.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -916,10 +951,14 @@ plot_chains(
   title = "Overlapping: pi"
 )
 
+dev.off()
+
 
 ```
 
 ```{r T2 B8}
+
+pdf("MCMC_sigma2.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -933,8 +972,234 @@ plot_chains(
   title = "Overlapping: sigma2"
 )
 
+dev.off()
+
 
 ```
+
+```{r T2 B_1}
+
+# Order component labels
+order_labels <- function(d) {
+
+  data.frame(
+    mu1 = pmin(d$mu1, d$mu2),
+    mu2 = pmax(d$mu1, d$mu2),
+
+    pi = ifelse(d$mu1 <= d$mu2,
+                d$pi, 1 - d$pi),
+
+    sigma2 = d$sigma2
+  )
+}
+
+# Apply ordering to both datasets
+sep_ordered <- lapply(keep_sep, order_labels)
+overlap_ordered <- lapply(keep_overlap, order_labels)
+
+
+```
+
+
+
+
+```{r T2 B_2}
+
+#R hat
+
+
+#Rhat function
+rhat <- function(chains) {
+
+  # Rows = iterations, columns = chains
+  M <- nrow(chains)
+  K <- ncol(chains)
+
+  chain_means <- colMeans(chains)
+
+  W <- mean(apply(chains, 2, var))
+  B <- M * var(chain_means)
+
+  V_hat <- ((M - 1) / M) * W + B / M
+
+  sqrt(V_hat / W)
+}
+
+# Calculate Rhat values for the clearly separated mixture
+rhat_sep <- c(
+  mu1 = rhat(sapply(sep_ordered, function(d) d$mu1)),
+  mu2 = rhat(sapply(sep_ordered, function(d) d$mu2)),
+  pi = rhat(sapply(sep_ordered, function(d) d$pi)),
+  sigma2 = rhat(sapply(sep_ordered, function(d) d$sigma2))
+)
+
+# Calculate Rhat values for the overlapping mixture
+rhat_overlap <- c(
+  mu1 = rhat(sapply(overlap_ordered, function(d) d$mu1)),
+  mu2 = rhat(sapply(overlap_ordered, function(d) d$mu2)),
+  pi = rhat(sapply(overlap_ordered, function(d) d$pi)),
+  sigma2 = rhat(sapply(overlap_ordered, function(d) d$sigma2))
+)
+
+# Create a comparison table
+rhat_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(rhat_sep, 6),
+  Overlapping = round(rhat_overlap, 6),
+  row.names = NULL
+)
+
+print(rhat_table)
+
+
+
+
+
+```
+```{r T2 B_3}
+
+#Autocorrelation
+
+pdf("Autocorrelation.pdf", width = 8, height = 6)
+
+# Autocorrelation - Clearly separated mixture
+par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+
+acf(sep_ordered[[1]]$mu1, main = "Separated: mu1")
+acf(sep_ordered[[1]]$mu2, main = "Separated: mu2")
+acf(sep_ordered[[1]]$pi, main = "Separated: pi")
+acf(sep_ordered[[1]]$sigma2, main = "Separated: sigma2")
+
+
+
+# Autocorrelation - Overlapping mixture
+par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+
+acf(overlap_ordered[[1]]$mu1, main = "Overlapping: mu1")
+acf(overlap_ordered[[1]]$mu2, main = "Overlapping: mu2")
+acf(overlap_ordered[[1]]$pi, main = "Overlapping: pi")
+acf(overlap_ordered[[1]]$sigma2, main = "Overlapping: sigma2")
+
+
+dev.off()
+
+
+```
+
+
+```{r T2 B_4}
+
+#Effective sample size
+
+
+
+ess <- function(x) {
+
+  # Calculate autocorrelation
+  rho <- as.numeric(
+    acf(x, plot = FALSE, lag.max = 1000)$acf
+  )[-1]
+
+  # Use positive adjacent pairs of autocorrelations
+  pair_sum <- 0
+
+  for (k in 1:floor(length(rho) / 2)) {
+
+    pair <- rho[2*k - 1] + rho[2*k]
+
+    if (pair <= 0) break
+
+    pair_sum <- pair_sum + pair
+  }
+
+  # Effective sample size
+  tau <- 1 + 2 * pair_sum
+
+  length(x) / tau
+}
+
+
+
+# Clearly separated mixture
+ess_sep <- c(
+  mu1 = mean(sapply(sep_ordered, function(d) ess(d$mu1))),
+  mu2 = mean(sapply(sep_ordered, function(d) ess(d$mu2))),
+  pi = mean(sapply(sep_ordered, function(d) ess(d$pi))),
+  sigma2 = mean(sapply(sep_ordered, function(d) ess(d$sigma2)))
+)
+
+# Overlapping mixture
+ess_overlap <- c(
+  mu1 = mean(sapply(overlap_ordered, function(d) ess(d$mu1))),
+  mu2 = mean(sapply(overlap_ordered, function(d) ess(d$mu2))),
+  pi = mean(sapply(overlap_ordered, function(d) ess(d$pi))),
+  sigma2 = mean(sapply(overlap_ordered, function(d) ess(d$sigma2)))
+)
+
+# Comparison table
+ess_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(ess_sep, 2),
+  Overlapping = round(ess_overlap, 2),
+  row.names = NULL
+)
+
+print(ess_table)
+
+
+
+```
+
+
+
+```{r T2 B_5}
+
+#Monte Carlo standard error
+
+
+# Calculate MCSE
+
+mcse <- function(x) {
+
+  sd(x) / sqrt(ess(x))
+}
+
+
+
+# Clearly separated mixture
+mcse_sep <- c(
+  mu1 = mean(sapply(sep_ordered, function(d) mcse(d$mu1))),
+  mu2 = mean(sapply(sep_ordered, function(d) mcse(d$mu2))),
+  pi = mean(sapply(sep_ordered, function(d) mcse(d$pi))),
+  sigma2 = mean(sapply(sep_ordered, function(d) mcse(d$sigma2)))
+)
+
+# Overlapping mixture
+mcse_overlap <- c(
+  mu1 = mean(sapply(overlap_ordered, function(d) mcse(d$mu1))),
+  mu2 = mean(sapply(overlap_ordered, function(d) mcse(d$mu2))),
+  pi = mean(sapply(overlap_ordered, function(d) mcse(d$pi))),
+  sigma2 = mean(sapply(overlap_ordered, function(d) mcse(d$sigma2)))
+)
+
+# Comparison table
+mcse_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(mcse_sep, 6),
+  Overlapping = round(mcse_overlap, 6),
+  row.names = NULL
+)
+
+print(mcse_table)
+
+
+
+
+
+```
+
+
+
 
 #Part C
 
@@ -966,7 +1231,9 @@ draws <- chains_sep_c[[1]]$draws
 burnin <- 2000
 draws <- draws[-(1:burnin), ]
 
-par(mfrow = c(1, 2))
+pdf("lable_mu.pdf", width = 8, height = 6)
+
+par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
 
 for (j in 1:2) {
 
@@ -986,10 +1253,14 @@ for (j in 1:2) {
   
 }
 
+dev.off()
+
 
 #Label switching for pi
 
-par(mfrow = c(1, 2))
+pdf("lable_pi.pdf", width = 8, height = 6)
+
+par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
 
 for (j in 1:2) {
 
@@ -1008,6 +1279,8 @@ for (j in 1:2) {
 
   abline(h = 0.5, col = "red", lty = 2)
 }
+
+dev.off()
 
 ```
 
