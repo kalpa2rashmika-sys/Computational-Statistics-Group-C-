@@ -1,0 +1,3188 @@
+---
+title: "Computational Statistics: Final Assignment (Group C)"
+author: "Zhuoyan Jiang, Kalpa Rashmikah, Elsa Mattila"
+date: "2026-10-24"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+# Task 1: Time series bootstrap and signal dimension
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center"
+)
+
+library(JADE)
+```
+
+## Part A: Whitening and Autocovariance Matrices
+
+### Overview
+
+This report implements Part A of the assignment: the preprocessing and matrix
+computations required by the time-series version of the ladle estimator of
+Nordhausen and Virta (2018). The report has two parts.
+
+- **Section 1** defines the generic functions: centering, whitening,
+  autocovariance estimation, symmetrization, and the AMUSE / SOBI diagonalizers.
+- **Section 2** applies these functions to the course data `timeseries.dat` and
+  verifies the implementation numerically.
+
+All computations are implemented directly in R. The only ready-made routines used are
+`JADE::rjd()` for joint diagonalization (as permitted by the assignment) and
+`JADE::SOBI()` for an independent verification step. The functions defined here
+are written so that they can be re-applied inside a bootstrap loop in Part C,
+where each bootstrap sample must be re-centered, re-whitened, and
+re-diagonalized.
+
+---
+
+### 1. Generic functions
+
+#### 1.1 Conventions
+
+The sample size is $T$ (called $n$ in the assignment) and the dimension is $p$.
+
+**Input convention:** every function that takes data expects a
+numeric $T \times p$ matrix whose rows are the time points, in time order, and
+whose columns are the variables. This matters in Part C, where every bootstrap
+sample is again a $T \times p$ matrix: a transposed input would give a wrong
+result without any error message. The following conventions are used
+consistently.
+
+- **Centering.** Column-wise subtraction of the sample mean:
+  $$\bar{x} = \frac{1}{T}\sum_{t=1}^{T} x_t, \qquad \tilde{x}_t = x_t - \bar{x}.$$
+
+- **Scaling.** No additional marginal standardization (each column is not divided by its standard deviation first). Whitening uses the full sample
+  covariance matrix, not only the column standard deviations, so it removes both
+  the differences in scale and the contemporaneous correlation between columns.
+  All scaling is absorbed into the whitening step. The whitening matrix is the
+  symmetric inverse square root
+  $$\hat{\Sigma}^{-1/2} = V D^{-1/2} V^\top,$$
+  computed from the eigendecomposition $\hat{\Sigma} = V D V^\top$ of the
+  sample covariance.
+
+- **Lagging.** For a lag $\tau \ge 1$, the pairs $(x_t, x_{t+\tau})$, with
+  $t = 1, \dots, T-\tau$, are used. No circular wrap-around in Part A.
+
+- **Normalization.** The $1/T$ normalization is used throughout for the
+  sample covariance and the autocovariance matrices:
+  $$\hat{\Sigma} = \frac{1}{T}\sum_{t=1}^{T} \tilde{x}_t \tilde{x}_t^{\top}, \qquad \hat{\Sigma}_\tau = \frac{1}{T}\sum_{t=1}^{T-\tau} \hat{x}_t^{st} \hat{x}_{t+\tau}^{st\top}.$$
+  Here $\hat{x}_t^{st}$ denotes the *whitened* series, so the autocovariance
+  is estimated on the whitened data. The $1/T$ normalization is the same
+  convention as R's `acf(..., type = "covariance", demean = FALSE)`.
+
+- **Symmetrization.** Under the model, $\Sigma_\tau$ is symmetric. The
+  finite-sample estimate $\hat{\Sigma}_\tau$ is in general not symmetric, and
+  its antisymmetric part is purely sampling noise. That part is removed:
+  $$\tilde{\Sigma}_\tau = \frac{1}{2}\left(\hat{\Sigma}_\tau + \hat{\Sigma}_\tau^{\top}\right).$$
+  Under the model, symmetrization removes sampling noise and does not remove
+  signal.
+
+- **Definition of $\Lambda$ and ordering.** Let $\tilde{\Sigma}_\tau$ be the
+  symmetrized autocovariance matrix of the whitened series. The vector `Lambda`
+  returned by these functions contains the diagonal elements of the matrix
+  $\Lambda$ in the paper, that is, the values $\lambda_j^2$:
+
+  - AMUSE (one lag $\tau$):
+    $\lambda_j^2 = \left(u_j^\top \tilde{\Sigma}_\tau u_j\right)^2$.
+  - SOBI (lag set $\mathcal{T}$):
+    $\lambda_j^2 = \sum_{\tau \in \mathcal{T}} \left(v_j^\top \tilde{\Sigma}_\tau v_j\right)^2$.
+
+  Here $u_j$ and $v_j$ are the columns of the estimated orthogonal matrix that
+  belong to $\lambda_j^2$. In both cases the columns are ordered so that
+  $\lambda_0^2 \ge \lambda_1^2 \ge \dots \ge \lambda_{p-1}^2$. The paper indexes
+  these values from $0$ to $p-1$, so `Lambda[k + 1]` in R is $\lambda_k^2$. Part C
+  uses the same sorted `Lambda` and the same column order. In the theory the
+  orthogonal matrix is called $U$. In the code it is called `U` for AMUSE and
+  `V` for SOBI (`V` is the name used by `rjd()`).
+
+#### 1.2 Why whitening
+
+In the second-order source separation (SOS) model
+
+$$x_t = \mu + \Omega z_t, \qquad \operatorname{Cov}(z_t) = I_p,$$
+
+the covariance of $x_t$ is $\Sigma = \Omega\Omega^\top$, so the matrix
+$\Sigma^{-1/2}\Omega$ is orthogonal. The whitened series is therefore
+
+$$x_t^{st} = \Sigma^{-1/2}(x_t - \mu) = U z_t, \qquad U^\top U = I_p.$$
+
+This has three consequences.
+
+1. The unknown mixing matrix $\Omega$ reduces to an **orthogonal** matrix $U$.
+2. The lag-$\tau$ autocovariance becomes
+   $$\Sigma_\tau = U \, D_\tau \, U^\top, \qquad D_\tau = \operatorname{Cov}(z_t, z_{t+\tau}),$$
+   If the component processes are mutually independent (assumptions (A1) and
+   (A2) of Nordhausen and Virta, 2018), or at least uncorrelated across
+   components at every lag, then $D_\tau$ is diagonal. The condition
+   $\operatorname{Cov}(z_t) = I_p$ alone is not enough, because it only describes
+   the components at the same time point. The diagonal form of $D_\tau$ is the
+   condition that lets all the whitened lagged autocovariance matrices share the
+   same diagonalizing matrix $U$. So a single lag can be diagonalized by
+   `eigen()` (AMUSE), and a set of lags can be jointly diagonalized by an
+   orthogonal matrix (SOBI).
+3. Whitening removes scale and contemporaneous correlation; what is left in
+   $\tilde{\Sigma}_\tau$ is the serial dependence that distinguishes signal
+   components from white noise.
+
+#### 1.3 Functions
+
+```{r functions}
+center_series <- function(X) {
+  # Subtract the column means
+  mu_hat <- colMeans(X)
+  Xc <- sweep(X, 2, mu_hat, FUN = "-")
+  list(mu = mu_hat, Xc = Xc)
+}
+
+whiten_series <- function(Xc) {
+  Tn <- nrow(Xc)
+  p <- ncol(Xc)
+
+  # Sample covariance (1/T) and its eigendecomposition, which must not be singular
+  S <- crossprod(Xc) / Tn
+  eig <- eigen(S, symmetric = TRUE)
+  stopifnot(min(eig$values) > 1e-10 * max(eig$values))
+
+  # Symmetric inverse square root and whitened data
+  D_inv_sqrt <- diag(1 / sqrt(eig$values), nrow = p)
+  S_inv_sq <- eig$vectors %*% D_inv_sqrt %*% t(eig$vectors)
+
+  Xw <- Xc %*% S_inv_sq
+
+  list(S = S, eig = eig, S_inv_sq = S_inv_sq, Xw = Xw)
+}
+
+# Lag-tau autocovariance of the whitened series: (1/T) * sum_t x_t x_{t+tau}'
+autocov_raw <- function(Xw, tau) {
+  # The lag must be valid
+  stopifnot(tau >= 1, tau < nrow(Xw))
+  Tn <- nrow(Xw)
+  # Pairs (x_t, x_{t+tau}) for t = 1, ..., T - tau
+  A <- Xw[1:(Tn - tau), , drop = FALSE]
+  B <- Xw[(1 + tau):Tn, , drop = FALSE]
+  crossprod(A, B) / Tn
+}
+
+# Remove the antisymmetric part
+symmetrize <- function(M) {
+  0.5 * (M + t(M))
+}
+
+# AMUSE: Lambda_j = (u_j' Sigma_tau u_j)^2 for ONE lag, sorted decreasingly
+amuse_fit <- function(Sigma_tau_sym) {
+  # The eigenvalues are u_j' Sigma_tau u_j
+  eig <- eigen(Sigma_tau_sym, symmetric = TRUE)
+  # Sort by lambda^2, not by the signed eigenvalue
+  ord <- order(eig$values^2, decreasing = TRUE)
+  list(
+    U = eig$vectors[, ord, drop = FALSE],
+    diag_vals = eig$values[ord],
+    Lambda = eig$values[ord]^2
+  )
+}
+
+sobi_fit <- function(X, lags = 1:12) {
+  # Center, whiten and compute the symmetrized autocovariances at all lags
+  cen <- center_series(X)
+  wht <- whiten_series(cen$Xc)
+  Xw <- wht$Xw
+  p <- ncol(Xw)
+
+  S <- array(NA_real_, dim = c(p, p, length(lags)))
+  for (k in seq_along(lags)) {
+    S[, , k] <- symmetrize(autocov_raw(Xw, lags[k]))
+  }
+
+  # Joint diagonalization
+  V <- rjd(S, maxiter = 1000)$V
+
+  # SOBI: Lambda_j = sum over lags of (v_j' Sigma_tau v_j)^2, then sorted decreasingly
+  Lambda_raw <- Reduce(`+`, lapply(seq_along(lags), function(k) {
+    diag(t(V) %*% S[, , k] %*% V)^2
+  }))
+  ord <- order(Lambda_raw, decreasing = TRUE)
+
+  list(V = V[, ord, drop = FALSE], Lambda = Lambda_raw[ord], Xw = Xw, S = S,
+       W = wht$S_inv_sq, mu = cen$mu)
+}
+```
+
+---
+
+### 2. Application to `timeseries.dat`
+
+#### 2.1 Data
+
+```{r load-data}
+ts_data <- as.matrix(read.table("timeseries.dat", header = FALSE))
+
+cat("Dimension of the data (T x p):", dim(ts_data))
+# Any missing values?
+anyNA(ts_data)
+```
+
+The data have $T = 1000$ time points and $p = 10$ variables, so the input
+convention of Section 1.1 holds (rows are time points and $T > p$). There are no
+missing values.
+
+#### 2.2 Centering and whitening
+
+```{r data-whiten}
+# Center and whiten the data
+cen <- center_series(ts_data)
+mu_hat <- cen$mu
+Xc <- cen$Xc
+
+wht <- whiten_series(Xc)
+S <- wht$S
+Xw <- wht$Xw
+
+cat("Column means after centering (should be approximately zero):")
+print(colMeans(Xc))
+
+cat("Eigenvalues of the sample covariance matrix:")
+print(wht$eig$values)
+```
+
+The column means after centering are zero up to rounding error. All eigenvalues
+of the sample covariance matrix are positive (the smallest is about $1.0$), so
+the inverse square root $\hat{\Sigma}^{-1/2}$ exists.
+
+#### 2.3 Numerical verification of whitening
+
+The whitened sample covariance should be close to $I_p$:
+
+$$\frac{1}{T}\sum_{t=1}^{T} \hat{x}_t^{st} \hat{x}_t^{st\top} \approx I_p.$$
+
+Because we use the $1/T$ normalization, the check is against $I_p$. Had we
+used R's `cov()` (which divides by $T-1$), the result would be
+$\frac{T-1}{T} I_p \approx 0.999 I_p$, not $I_p$.
+
+```{r data-verify}
+# The whitened covariance should be the identity
+S_white <- crossprod(Xw) / nrow(Xw)
+err_F <- sqrt(sum((S_white - diag(ncol(Xw)))^2))
+off_max <- max(abs(S_white - diag(ncol(Xw))))
+
+cat("Frobenius distance ||S_white - I||_F =", signif(err_F, 4))
+cat("Max absolute deviation from I =", signif(off_max, 4))
+```
+
+Both quantities are at machine precision, confirming the whitening has the
+intended effect on the sample covariance matrix.
+
+#### 2.4 Autocovariance matrices
+
+The autocovariance matrices of the whitened series are estimated at lags $1$ to
+$12$ (the SOBI lag set used in Nordhausen and Virta, 2018) and symmetrized as
+described in Section 1.1. The matrix at lag $1$ is used by AMUSE.
+`sobi_fit()` recomputes all twelve matrices from the raw data, so that it can
+be applied to bootstrap samples in Part C.
+
+```{r data-autocov}
+# Symmetrized autocovariance matrices at lags 1 to 12
+lags <- 1:12
+p <- ncol(Xw)
+
+Sigma_sym_list <- lapply(lags, function(tau) {
+  symmetrize(autocov_raw(Xw, tau))
+})
+```
+
+#### 2.5 Independent check of the autocovariances
+
+The matrices are compared with R’s multivariate
+`acf(..., type = "covariance", demean = FALSE)`, which computes the same $1/T$
+sums of lagged products, including the cross terms between different columns.
+Only the symmetrized matrices are used later, so both sides are symmetrized
+before the comparison. This also means that the check does not depend on the
+order of the two indices in the array returned by `acf()`.
+
+```{r check-acov}
+# Compare with acf(); both sides are symmetrized
+a <- acf(Xw, lag.max = 12, type = "covariance",
+         plot = FALSE, demean = FALSE)$acf
+
+diffs <- sapply(lags, function(k) {
+  max(abs(Sigma_sym_list[[k]] - symmetrize(a[k + 1, , ])))
+})
+
+cat("Max absolute difference versus acf() over all lags and entries:",
+    signif(max(diffs), 4))
+```
+
+The difference is zero up to rounding error, so the autocovariance matrices
+agree with R's own computation.
+
+#### 2.6 AMUSE (two-matrix / eigenvalue case)
+
+AMUSE uses a single lag $\tau$ and finds an orthogonal matrix $U_\tau$ that
+diagonalizes $\tilde{\Sigma}_\tau$:
+
+$$U_\tau^\top \tilde{\Sigma}_\tau U_\tau = \text{diagonal}, \qquad \Lambda = \operatorname{diag}\left(U_\tau^\top \tilde{\Sigma}_\tau U_\tau\right)^2.$$
+
+The columns of $U_\tau$ are reordered so that the corresponding $\Lambda$
+values are decreasing. `amuse_res$Lambda` contains
+$(\lambda_0^2, \dots, \lambda_{p-1}^2)$ as defined in Section 1.1. The lag is
+$\tau = 1$.
+
+```{r data-amuse}
+# AMUSE at lag 1
+tau_amuse <- 1
+amuse_res <- amuse_fit(Sigma_sym_list[[which(lags == tau_amuse)]])
+
+cat("AMUSE at lag tau =", tau_amuse)
+cat("Lambda (decreasing):")
+print(round(amuse_res$Lambda, 4))
+```
+
+#### 2.7 SOBI (joint diagonalization via `JADE::rjd()`)
+
+SOBI uses the lag set $\mathcal{T} = \{1, \dots, 12\}$ and jointly diagonalizes
+$\tilde{\Sigma}_{\tau_1}, \dots, \tilde{\Sigma}_{\tau_K}$ by an orthogonal
+matrix $U_{\mathcal{T}}$:
+
+$$\Lambda = \sum_{\tau \in \mathcal{T}} \operatorname{diag}\left(U_{\mathcal{T}}^\top \tilde{\Sigma}_\tau U_{\mathcal{T}}\right)^2.$$
+
+We use the function `sobi_fit()` defined in Section 1.3, which will also be
+used in Part C for each bootstrap sample.
+
+```{r data-sobi}
+# SOBI with lags 1 to 12
+sob <- sobi_fit(ts_data, lags = 1:12)
+V <- sob$V
+
+cat("SOBI Lambda (decreasing):")
+print(round(sob$Lambda, 4))
+
+cat("Orthogonality error ||V'V - I||_max =",
+    signif(max(abs(crossprod(V) - diag(ncol(V)))), 4))
+```
+
+`sob$Lambda` contains $(\lambda_0^2, \dots, \lambda_{p-1}^2)$ as defined in
+Section 1.1, so Part C can use it directly. The orthogonality error is at
+machine precision, so $V$ is orthogonal.
+
+As an independent check, we compare our components with those of the
+ready-made `JADE::SOBI()`. This function is used only for this check. Because
+the sign and the order of components are not identifiable, we compare them by
+absolute correlation. For each of our components we report the best match and
+the second-best match among the `JADE::SOBI()` components.
+
+```{r data-sobi-check}
+# Compare with JADE::SOBI, up to sign and order
+ref <- JADE::SOBI(ts_data, k = 12)
+C <- abs(cor(sob$Xw %*% V, ref$S))
+
+best <- apply(C, 1, max)
+second <- apply(C, 1, function(r) sort(r, decreasing = TRUE)[2])
+
+cat("Smallest best-match correlation:", signif(min(best), 4))
+cat("Largest second-best correlation:", signif(max(second), 4))
+```
+
+Each of our components has one match with absolute correlation close to $1$,
+and all other correlations are close to $0$. Our solution and `JADE::SOBI()`
+therefore produce the same components up to sign and order.
+
+---
+
+### 3. Summary of Part A
+
+- **Conventions.** Column centering; no additional scaling; positive lags only;
+  $1/T$ normalization (same as R's `acf(type = "covariance", demean = FALSE)`);
+  symmetrization of the sample autocovariance matrices.
+- **Whitening.** The series is whitened by the symmetric inverse square root
+  $\hat{\Sigma}^{-1/2}$. Numerical verification shows the whitened sample
+  covariance is at machine precision equal to $I_p$.
+- **Autocovariances.** Estimated at lags $1$ to $12$ with $1/T$ normalization
+  and no wrap-around. The antisymmetric part of the raw estimates is sampling
+  noise and is removed by symmetrization. The symmetrized estimates agree with
+  `acf()` to machine precision.
+- **AMUSE.** One lag, base R `eigen()`, giving
+  $\Lambda = \operatorname{diag}(U_\tau^\top \tilde{\Sigma}_\tau U_\tau)^2$,
+  ordered decreasingly.
+- **SOBI.** Lags $1$ to $12$, joint diagonalization via `JADE::rjd()`, giving
+  $\Lambda = \sum_\tau \operatorname{diag}(U_{\mathcal{T}}^\top \tilde{\Sigma}_\tau U_{\mathcal{T}})^2$,
+  ordered decreasingly. Orthogonality of $V$ is at machine precision.
+- **Verification.** An independent check with `JADE::SOBI()` confirms our SOBI
+  solution agrees with the reference implementation up to sign and order.
+
+The functions `center_series()`, `whiten_series()`, `autocov_raw()`,
+`symmetrize()`, `amuse_fit()`, and `sobi_fit()` defined in Section 1.3 will be
+reused in Part C, where each bootstrap sample must be re-centered, re-whitened,
+and re-diagonalized. Part B only requires the original data matrix
+`ts_data`.
+
+---
+
+## Part B: Bootstrap for Dependent Observations
+
+### Overview
+
+Part B implements two bootstrap methods for dependent multivariate
+observations: the fixed-block bootstrap and the stationary bootstrap (SB) of
+Politis and Romano (1994). 
+
+Section 1 gives the methods and the implementation.
+Section 2 shows how the methods behave on a strongly dependent
+simulated series. Section 3 checks that the same functions work on the course
+data as a general $T \times p$ matrix. Section 4 summarises.
+
+Notation: $T$ is the number of time points, $p$ the dimension, and $X$ the
+$T \times p$ data matrix with rows as time. The SB parameter is called
+$p_{\mathrm{sb}}$ to avoid a clash with the dimension $p$.
+
+---
+
+### 1. Bootstrap functions
+
+#### 1.1 Why iid resampling is not appropriate
+
+The iid bootstrap draws $X_1^*, \dots, X_T^*$ independently from
+$\{X_1, \dots, X_T\}$ with replacement. The draws are independent, so the
+resampled series has no serial dependence:
+$\operatorname{Cov}^*(X_t^*, X_{t+\tau}^*) = 0$ for every $\tau \neq 0$,
+whatever the dependence in the original series. For the ladle estimator this
+is a problem, since it is built from the autocovariance matrices
+$\Sigma_\tau$. An iid bootstrap sample has autocovariance matrices that only
+reflect noise around zero, so the eigenvectors and the $f$ part of the ladle
+would be computed from the wrong distribution.
+
+Block resampling instead keeps consecutive observations together: the
+dependence inside each block is preserved, and only the joins between blocks
+break it. Since whole rows $X_t$ are resampled (Politis and Romano, 1994, Section 4.1),
+the dependence between the $p$
+components at the same time point, and between components at nearby lags, is
+also kept.
+
+#### 1.2 Fixed-block bootstrap
+
+Let $B$ be the block length and $h = \lceil T/B \rceil$. A bootstrap sample is
+generated as follows (Nordhausen and Virta, 2018, Section 2).
+
+1. Draw $h$ start points $s_1, \dots, s_h$ uniformly from $\{1, \dots, T-B+1\}$.
+2. Block $j$ is $(X_{s_j}, \dots, X_{s_j+B-1})$.
+3. The blocks are concatenated and the series is truncated to length $T$.
+
+The tuning parameter is the block length $B$. Blocks do not wrap around, so
+the first and last observations are covered by fewer blocks than the middle
+ones, and the resampled series is not stationary. With $B = 1$ the method
+reduces to the iid bootstrap.
+
+#### 1.3 Stationary bootstrap
+
+The SB uses blocks with random lengths. Let $p_{\mathrm{sb}} \in (0, 1]$ be
+the tuning parameter.
+
+1. Draw a start point $s$ uniformly from $\{1, \dots, T\}$ and a block length
+   $L$ with
+   $$P(L = m) = (1 - p_{\mathrm{sb}})^{m-1} p_{\mathrm{sb}}, \qquad m = 1, 2, \dots$$
+   This is the geometric distribution on $\{1, 2, \dots\}$; in R this is
+   `rgeom(1, p_sb) + 1`.
+2. The block is $(X_s, \dots, X_{s+L-1})$ with indices taken circularly:
+   $X_{T+k} = X_k$.
+3. Blocks are added until the series has length $T$; the last block is cut.
+
+Since $E(L) = 1/p_{\mathrm{sb}}$, the *expected block length* is
+$\ell = 1/p_{\mathrm{sb}}$, and a target $\ell$ is obtained with
+$p_{\mathrm{sb}} = 1/\ell$. The tuning parameter is $p_{\mathrm{sb}}$, or
+equivalently the expected length $\ell$. With $p_{\mathrm{sb}} = 1$ all blocks
+have length one and the method reduces to the iid bootstrap. The circular
+wrapping combined with the memoryless geometric lengths makes the SB
+pseudo-series stationary conditional on the data (Politis and Romano, 1994,
+Proposition 1).
+
+#### 1.4 Differences between the two methods
+
+The SB uses random geometric block lengths with mean $1/p_{\mathrm{sb}}$ and
+wraps the data around a circle, whereas the fixed-block bootstrap uses a
+constant block length and does not wrap. As a consequence the SB pseudo-series
+is conditionally stationary while the fixed-block pseudo-series is not. In the
+SB, $\tau$ consecutive steps stay inside the same block with probability
+$(1 - p_{\mathrm{sb}})^\tau$, so the dependence at lag $\tau$ decays
+geometrically. In the fixed-block bootstrap, dependence is kept only for lags
+shorter than $B$.
+
+#### 1.5 Implementation
+
+All functions take a numeric $T \times p$ matrix with rows as time and resample
+whole rows with a common index, so the dependence between components is kept.
+
+```{r boot-functions}
+# Index generators: each returns a vector of T row indices.
+iid_index <- function(T) sample.int(T, T, replace = TRUE)
+
+fixed_block_index <- function(T, B) {
+  # h blocks of length B from random start points, cut to length T
+  h <- ceiling(T / B)
+  starts <- sample.int(T - B + 1, h, replace = TRUE)
+  idx <- rep(starts, each = B) + rep(0:(B - 1), times = h)
+  idx[1:T]
+}
+
+stationary_index <- function(T, p_sb) {
+  # Geometric block lengths, enough to cover T
+  lens <- integer(0)
+  while (sum(lens) < T) {
+    lens <- c(lens, rgeom(ceiling(2 * T * p_sb) + 10, p_sb) + 1)
+  }
+  # Random start points, circular indices
+  lens <- lens[1:which(cumsum(lens) >= T)[1]]
+  starts <- sample.int(T, length(lens), replace = TRUE)
+  idx <- rep(starts, lens) + sequence(lens) - 1
+  ((idx - 1) %% T + 1)[1:T]
+}
+
+# method is "iid", "fixed" (tuning = B) or "stationary" (tuning = p_sb).
+boot_index <- function(T, method, tuning = NULL) {
+  switch(method,
+         iid = iid_index(T),
+         fixed = fixed_block_index(T, tuning),
+         stationary = stationary_index(T, tuning))
+}
+
+# List of M bootstrap samples, each a T x p matrix.
+boot_samples <- function(X, M, method, tuning = NULL) {
+  X <- as.matrix(X)
+  lapply(seq_len(M), function(m)
+    X[boot_index(nrow(X), method, tuning), , drop = FALSE])
+}
+```
+
+`boot_samples()` returns $M$ matrices of size $T \times p$, which can be passed to the SOBI function of Part A to compute the ladle quantities.
+
+---
+
+### 2. Application to simulated data
+
+The two methods are applied to a bivariate VAR(1) series with strong serial
+dependence, so that the difference to iid resampling is clearly visible.
+
+#### 2.1 Data
+
+```{r sim}
+# Simulate a VAR(1) series, dropping a burn-in period
+set.seed(123)
+sim_var <- function(T, A, burn = 200) {
+  p <- nrow(A)
+  E <- matrix(rnorm((T + burn) * p), ncol = p)
+  X <- matrix(0, T + burn, p)
+  for (t in 2:(T + burn)) X[t, ] <- A %*% X[t - 1, ] + E[t, ]
+  X[-(1:burn), ]
+}
+
+A <- matrix(c(0.8, 0.3, 0, 0.5), 2)
+Xs <- sim_var(1000, A)
+
+# ACF averaged over the components
+avg_acf <- function(X, K = 30) {
+  a <- acf(X, lag.max = K, plot = FALSE)$acf
+  p <- ncol(X)
+  sapply(0:K, function(k) mean(sapply(1:p, function(j) a[k + 1, j, j])))
+}
+
+# Average of avg_acf over the bootstrap samples
+boot_avg_acf <- function(Zs, K = 30) {
+  rowMeans(sapply(Zs, function(Z) avg_acf(Z, K)))
+}
+```
+
+#### 2.2 Index patterns
+
+One realisation of the index vector is shown for each method with $T = 200$
+and block length (or expected block length) $20$.
+
+```{r index-plot, fig.width = 6.5, fig.height = 2.3}
+plot_index <- function() {
+  par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+  set.seed(123)
+  plot(iid_index(200), pch = 16, cex = 0.4, main = "iid",
+       xlab = "t*", ylab = "original index")
+  plot(fixed_block_index(200, 20), pch = 16, cex = 0.4, main = "fixed, B = 20",
+       xlab = "t*", ylab = "")
+  plot(stationary_index(200, 1 / 20), pch = 16, cex = 0.4, main = "SB, mean length 20",
+       xlab = "t*", ylab = "")
+  par(mfrow = c(1, 1))
+}
+
+plot_index()                                          # shown in the Rmd
+
+pdf("index_patterns.pdf", width = 6.5, height = 2.3)  # saved as pdf
+plot_index()
+dev.off()
+```
+
+The iid panel shows scattered points with no structure. The fixed-block panel shows
+straight segments of constant slope. The SB panel shows segments of varying
+length, because the block lengths are geometric.
+
+#### 2.3 Autocorrelation of the resampled series
+
+$M = 200$ bootstrap samples are drawn with $B = 20$ and $\ell = 20$
+($p_{\mathrm{sb}} = 0.05$).
+
+```{r acf-plot, fig.width = 5, fig.height = 3.2}
+M <- 200
+K <- 30
+ell <- 20
+
+a_orig <- avg_acf(Xs, K)
+a_iid <- boot_avg_acf(boot_samples(Xs, M, "iid"), K)
+a_fixed <- boot_avg_acf(boot_samples(Xs, M, "fixed", ell), K)
+a_sb <- boot_avg_acf(boot_samples(Xs, M, "stationary", 1 / ell), K)
+
+cols <- c("black", "gray", "blue", "orange")
+
+plot_acf_boot <- function() {
+  par(mfrow = c(1, 1), mar = c(4, 4, 1, 1))
+  plot(0:K, a_orig, type = "b", pch = 16, cex = 0.6, col = cols[1],
+       ylim = range(c(a_orig, a_iid, a_fixed, a_sb)),
+       xlab = "lag", ylab = "average ACF over components")
+  lines(0:K, a_iid, type = "b", pch = 16, cex = 0.6, col = cols[2])
+  lines(0:K, a_fixed, type = "b", pch = 16, cex = 0.6, col = cols[3])
+  lines(0:K, a_sb, type = "b", pch = 16, cex = 0.6, col = cols[4])
+  legend("topright",
+         c("original", "iid", "fixed B = 20", "SB, mean 20"),
+         col = cols, lty = 1, pch = 16, cex = 0.8, bty = "n")
+}
+
+plot_acf_boot()                                  
+
+pdf("bootstrap_acf.pdf", width = 5, height = 3.2)  # saved as pdf
+plot_acf_boot()
+dev.off()
+```
+
+The original series has strong serial dependence (lag-1 average ACF about
+$0.7$). The iid bootstrap reduces this to essentially zero at every non-zero
+lag. Both block methods are close to each other and lie slightly below the original ACF at the shorter lags (up to about lag 18), because the joins between consecutive blocks are usually not adjacent in the original series, so the local dependence is lost at those points. At larger lags all curves are close to zero.
+
+#### 2.4 Effect of the block length
+
+For each $B$ and each $\ell = B$, $M = 200$ bootstrap samples are drawn. Two
+summaries are reported: the average lag-1 autocorrelation over components, and
+the bootstrap standard deviation of the sample mean (averaged over components).
+The value $\ell = 1$ corresponds to the iid bootstrap.
+
+```{r grid}
+# Lag-1 ACF and SD of the sample mean over M bootstrap samples
+grid_row <- function(X, method, tuning, M = 200) {
+  Tn <- nrow(X); pp <- ncol(X)
+  ids <- replicate(M, boot_index(Tn, method, tuning), simplify = FALSE)
+  Zs <- lapply(ids, function(i) X[i, ])
+
+  acf1_avg <- mean(sapply(Zs, function(Z) {
+    a <- acf(Z, lag.max = 1, plot = FALSE)$acf
+    mean(sapply(1:pp, function(j) a[2, j, j]))
+  }))
+
+  means_mat <- sapply(Zs, colMeans)
+  c(acf1 = acf1_avg,
+    sd_mean = mean(apply(means_mat, 1, sd)))
+}
+
+ells <- c(1, 5, 10, 20, 50, 100, 200)
+fx <- t(sapply(ells, function(b) grid_row(Xs, "fixed", b)))
+sb <- t(sapply(ells, function(b) grid_row(Xs, "stationary", 1 / b)))
+
+tab <- data.frame(
+  ell = ells,
+  acf1_fixed = fx[, 1], acf1_SB = sb[, 1],
+  sd_fixed = fx[, 2], sd_SB = sb[, 2]
+)
+round(tab, 3)
+cat("original lag-1 average ACF:", round(a_orig[2], 3))
+```
+
+At $\ell = 1$ both methods reduce to iid resampling, giving an ACF of about
+$-0.004$ and an SD of the mean of about $0.05$. As $\ell$ increases, the
+lag-1 ACF rises from the iid value towards the original value of $0.697$,
+reaching about $0.69$ at $\ell = 200$. 
+
+The bootstrap SD of the mean peaks at moderate block lengths: around $\ell = 50$ for the
+fixed-block method ($0.132$) and $\ell = 20$ for the stationary bootstrap
+($0.110$). For larger $\ell$ it decreases, dropping to about $0.08$ at
+$\ell = 200$, where only a few blocks are drawn ($T/\ell = 5$). The two
+methods give very similar ACF values at every $\ell$.
+
+---
+
+### 3. General check on the course data
+
+The functions are applied to the course data `ts_data` (read in Part A) to
+check that they work for a general $T \times p$ matrix with $p > 2$.
+
+```{r course-load}
+# A few bootstrap samples of the course data
+Bd <- boot_samples(ts_data, 5, "stationary", 1 / 20)
+c(n_samples = length(Bd), dim = dim(Bd[[1]]))
+
+# Mean max deviation of the correlation matrix over N bootstrap replicates
+set.seed(123)
+N_corr <- 100
+corr_dev <- function(method, tuning = NULL, N = N_corr) {
+  mean(sapply(seq_len(N), function(n) {
+    Z <- ts_data[boot_index(nrow(ts_data), method, tuning), , drop = FALSE]
+    max(abs(cor(Z) - cor(ts_data)))
+  }))
+}
+
+round(c(fixed      = corr_dev("fixed", 20),
+        stationary = corr_dev("stationary", 1 / 20)), 3)
+```
+The average maximum deviation of the contemporaneous correlation matrix is 0.076 (fixed-block) and 0.075 (stationary), so the bootstrap samples keep the correlation of the course data.
+
+---
+
+### 4. Summary of Part B
+
+- Ordinary iid resampling destroys the serial dependence and is not
+  appropriate for time series. Block-based resampling preserves the local
+  dependence by resampling consecutive runs of observations.
+- The fixed-block bootstrap resamples blocks of length $B$. The SB uses
+  geometric block lengths with mean $\ell = 1/p_{\mathrm{sb}}$ and wraps
+  around, which makes it conditionally stationary. Both reduce to iid
+  resampling when $B = 1$ or $p_{\mathrm{sb}} = 1$.
+- On a strongly dependent VAR(1) series, the block methods preserved the
+  average ACF (slightly below the original values), while iid resampling did
+  not. The bootstrap standard
+  deviation of the mean was largest at moderate block lengths.
+- The functions run on the $1000 \times 10$ course data.
+
+## Part C: The ladle quantities
+
+Implement the quantities $f$ , $g$, and $\varphi$ used in the ladle estimator as defined in the paper.
+
+Your report should explain what information is represented by the eigenvalue-based part and
+by the bootstrap-variability part of the criterion, and how these quantities are combined to
+estimate the dimension.
+
+Check your implementation carefully on simulated data. Intermediate computational checks
+should be described where they help establish that the implementation is correct.
+
+### Answer:
+
+The function $f_0(k)$ is defined for $k=1,\dots,p-1$ as $\frac{1}{n}\sum_{j=1}^n(1-|\text{det}(\hat{B}_k^T B_{k,j}^*)|)$, where $\hat{B}_k^T$ are the first $k$ columns of the joint diagonaliser computed from the original sample and $B_{k,j}^*$ are the first $k$ columns of the joint diagonaliser computed from the $j$th bootstrap sample, and $f_0(0)=0$. The function $f(k)$ is then extracted from $f_0(k)$ by normalising in the following way: $f(k)=f_0(k)/1+(\sum_{l=0}^{p-1}f_0(l))$.
+
+The function $\varphi(k)$ is defined with the diagonal elements of $\Lambda$, $\lambda_0^2,\lambda_1^2,\dots,\lambda_{p-1}^2$. The diagonal elements are in a decreasing order. The (normalised) function $\varphi(k)=\lambda_k^2/(1+\sum_{l=0}^{p-1}\lambda_l^2$.
+
+After obtaining $f$ and $\varphi$, obtaining the ladle function $g$ is easy. The ladle function is defined as $g(k) = f(k) + \varphi(k)$. The ladle estimator for the dimension will be $\hat{q} = \argmin \{g(q)\}$.
+
+In the ladle function $g$, the information represented by the bootstrap-variability is found in the normalised variance function $f$. This is quite obvious, because it is the only quantity in $g$ that contains components stemming from bootstrapping. The variance function $f_0$ is a way of finding out the average variance of the space, which is spanned by the first $k$ vectors. The information represented by the eigenvalues is found mainly in $\varphi$, but also in $f$. The function $\varphi$ is essentially a scree plot, which contains the eigenvalues of the sample covariance matrix of the centred and whitened data calculated with either AMUSE or SOBI.
+
+
+Here we define the function ladle, which computes the ladle quantities $f$, $\varphi$ and $g$.
+
+```{r}
+ladle <- function(data, j, method, tuning, fit) {
+  # Calculate f
+  k <- dim(data)[2] - 1
+  B_star <- list(NA)
+  sd_boot <- numeric(k+1)
+  
+  if(fit == "sobi") {B_hat <- sobi_fit(data)$V}
+  if(fit == "amuse") {
+    X <- data
+    Xc <- center_series(X)$Xc
+    Xw <- whiten_series(Xc)$Xw
+    M <- autocov_raw(Xw, tau = 1)
+    Sigma_tau_sym <- symmetrize(M)
+    B_hat <- amuse_fit(Sigma_tau_sym)$U
+  }
+  
+  Bd <- boot_samples(data, j, method, tuning)
+
+  f_0 <- matrix(rep(0,(k+1)*j), nrow = j)
+#  print(f_0) # For checking if the matrix has the right dimensions
+  
+  # Conditioning based on which method is specified to be used for joint diagonalisation
+  if(fit == "sobi") {
+    for (i in 1:j) {
+      B_star[[i]] <- sobi_fit(Bd[[i]])$V
+    }
+  }
+  
+  if(fit == "amuse") {
+    for (i in 1:j) {
+      X <- Bd[[i]]
+      Xc <- center_series(X)$Xc
+      Xw <- whiten_series(Xc)$Xw
+      M <- autocov_raw(Xw, tau = 1)
+      Sigma_tau_sym <- symmetrize(M)
+      B_star[[i]] <- amuse_fit(Sigma_tau_sym)$U
+    }
+  }
+  # Loop that calculates the matrix, which will be used for f_0 
+  for (m in 1:j) {
+      B_star_j <- B_star[[m]] 
+      for (i in 1:k) {
+        f_0[m,i] <- (1-abs(det(crossprod(B_hat[,1:i], B_star_j[,1:i]))))
+    }
+  }
+
+  f_0 <- cbind(f_0[,k+1], f_0[,1:k])
+  
+#  print(f_0) # For checking if the first column is 0
+  
+  f_0 <- colMeans(f_0) # Actual f_0
+#  f <- c(f_0[k+1], f_0[1:k])
+  f <- f_0/(1 + sum(f_0))
+  
+  # Calculate phi
+  l <- dim(data)[2]
+  phi <- numeric(l)
+  
+  # Conditioning based on which method is specified to be used for joint diagonalisation
+  if(fit == "sobi") {
+    Lambda <- sobi_fit(data)$Lambda
+    for (i in 1:l) {
+      phi[i] <- Lambda[i]/(1+sum(Lambda))
+    }
+  }
+  
+  if(fit == "amuse") {
+    X <- data
+    Xc <- center_series(X)$Xc
+    Xw <- whiten_series(Xc)$Xw
+    M <- autocov_raw(Xw, tau = 1)
+    Sigma_tau_sym <- symmetrize(M)
+    Lambda <- amuse_fit(Sigma_tau_sym)$Lambda
+    for (i in 1:l) {
+      phi[i] <- Lambda[i]/(1+sum(Lambda))
+    }
+  }
+  
+  # Calculate g
+  g <- f + phi
+  
+  return(list(f = f, phi = phi, g = g))
+}
+```
+
+Simulate data to test the function.
+
+```{r}
+A <- matrix(c(0.8, 0.3, 0, 0.5), 2)
+set.seed(7)
+sim_X <- sim_var(1000, A)
+sim_noise <- matrix(rnorm(2*1000), nrow = 1000)
+sim_data <- cbind(sim_X, sim_noise)
+```
+
+Use the simulated data with two noise components to test the custom ladle function
+
+```{r}
+set.seed(8)
+t_ladle1 <- ladle(sim_data, 200, "stationary", 1/40, "sobi")
+t_ladle2 <- ladle(sim_data, 200, "fixed", 40, "sobi")
+t_ladle3 <- ladle(sim_data, 200, "stationary", 1/40, "amuse")
+t_ladle4 <- ladle(sim_data, 200, "fixed", 40, "amuse")
+t_ladle5 <- ladle(sim_data, 200, "stationary", 1/60, "sobi")
+t_ladle6 <- ladle(sim_data, 200, "fixed", 60, "sobi")
+t_ladle7 <- ladle(sim_data, 200, "stationary", 1/60, "amuse")
+t_ladle8 <- ladle(sim_data, 200, "fixed", 60, "amuse")
+```
+
+Plot the results
+
+```{r}
+plot(t_ladle1$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle1$phi, col = "red")
+lines(t_ladle1$g, col = "purple")
+
+plot(t_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle2$phi, col = "red")
+lines(t_ladle2$g, col = "purple")
+
+plot(t_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle3$phi, col = "red")
+lines(t_ladle3$g, col = "purple")
+
+plot(t_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle4$phi, col = "red")
+lines(t_ladle4$g, col = "purple")
+```
+
+```{r}
+plot(t_ladle5$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle5$phi, col = "red")
+lines(t_ladle5$g, col = "purple")
+
+plot(t_ladle6$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle6$phi, col = "red")
+lines(t_ladle6$g, col = "purple")
+
+plot(t_ladle7$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle7$phi, col = "red")
+lines(t_ladle7$g, col = "purple")
+
+plot(t_ladle8$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
+lines(t_ladle8$phi, col = "red")
+lines(t_ladle8$g, col = "purple")
+```
+All of the ladle estimators agree on that the signal dimension is 2, which is the result we hoped for.
+
+## Part D: Simulation study
+Use the simulation setting specified as Setting 1 in the paper to investigate the behaviour of
+your implementation.
+
+You are not required to reproduce every numerical result or figure in the paper. Instead,
+reproduce the main qualitative behaviour of the estimator under Setting 1 and use the
+simulation to demonstrate that your implementation works as intended.
+
+Compare the fixed-block and stationary bootstrap approaches. Choose reasonable block-length
+settings and justify the choices. Investigate whether the estimated dimension is sensitive to
+the bootstrap method, block length, or sample size.
+
+Your simulation study should contain enough independent repetitions to support the conclu-
+sions, but computational effort should be used sensibly. Report Monte Carlo results in a way
+that makes the uncertainty and variability of the simulation visible.
+
+### Answer:
+
+"Throughout the simulations we considered model (1) with p = 10 and q = 5 where the five signal components are ARMA(0.6; (0, -0.4)), ARMA((0.4, 0.1, 0.3); (0.2, 0.4)), AR(0.4), MA(0.5, 0.3, 0.1,
+0.2) and AR(0.1, 0.1, 0.3), all having Gaussian innovations. In Setting 1 the five noise components are all Gaussian white noise."
+
+The simulation study will be done by using the same signal generation process as in Nordhausen & Virta, 2018. For process length, $T = 200, 500, 1000, 2000$ were considered. 10 bootstrap samples were used.
+
+First we will define the functions that will be used to generate the signals.
+```{r}
+AR1 <- function(phi, n, burn = 200) {
+  X <- numeric(n + burn)
+  eps <- rnorm(n + burn)
+  for (i in 2:(n + burn)) {
+    X[i] <- phi * X[i-1] + eps[i]
+  }
+  X <- X[-(1:burn)]
+  return(X)
+}
+```
+
+Longer burn-in period, because there are more parameters for the more complicated models
+
+```{r}
+AR3 <- function(phi, n, burn = 500) {
+  X <- numeric(n + burn)
+  X[1:3] <- rnorm(3)
+  eps <- rnorm(n + burn)
+  for (i in 4:(n + burn)) {
+    X[i] <- phi[1]*X[i-1] + phi[2]*X[i-2] + phi[3]*X[i-3] + eps[i]
+  }
+  X <- X[-(1:burn)]
+  return(X)
+}
+```
+
+```{r}
+MA4 <- function(theta, n, burn = 500) {
+  X <- numeric(n + burn)
+  eps <- rnorm(n + burn)
+  X[1:4] <- rnorm(4)
+  for (i in 5:(n + burn)) {
+    X[i] <- eps[i] + theta[1]*eps[i-1] + theta[2]*eps[i-2] + theta[3]*eps[i-3] + theta[4]*eps[i-4]
+  }
+  X <- X[-(1:burn)]
+  return(X)
+}
+```
+
+```{r}
+ARMA12 <- function(phi, theta, n, burn = 500) {
+  X <- numeric(n + burn)
+  eps <- rnorm(n + burn)
+  X[1:2] <- rnorm(2)
+  for (i in 3:(n + burn)) {
+    X[i] <- eps[i] + phi*X[i-1] + theta[1]*eps[i-1] + theta[2]*eps[i-2]
+  }
+  X <- X[-(1:burn)]
+  return(X)
+}
+```
+
+```{r}
+ARMA32 <- function(phi, theta, n, burn = 500) {
+  X <- numeric(n + burn)
+  eps <- rnorm(n + burn)
+  X[1:3] <- rnorm(3)
+  for (i in 4:(n + burn)) {
+    X[i] <- eps[i] + phi[1]*X[i-1] + phi[2]*X[i-2] + phi[3]*X[i-3] + theta[1]*eps[i-1] + theta[2]*eps[i-2]
+  }
+  X <- X[-(1:burn)]
+  return(X)
+}
+```
+
+Simulate the five signals and the five noise components
+```{r}
+set.seed(140)
+signal1 <- ARMA12(0.6, c(0, -0.4), 2000)
+signal2 <- ARMA32(c(0.4, 0.1, 0.3), c(0.2, 0.4), 2000)
+signal3 <- AR1(0.4, 2000)
+signal4 <- MA4(c(0.5, 0.3, 0.1, 0.2), 2000)
+signal5 <- AR3(c(0.1, 0.1, 0.3), 2000)
+noise <- matrix(rnorm(5*2000), nrow = 2000) # 5-variate white noise
+signal <- matrix(c(signal1, signal2, signal3, signal4, signal5), nrow = 2000)
+
+sim <- cbind(signal, noise)
+```
+
+Plot the signals
+```{r}
+plot.ts(sim[,1])
+plot.ts(sim[,2])
+plot.ts(sim[,3])
+plot.ts(sim[,4])
+plot.ts(sim[,5])
+plot.ts(sim[,6])
+plot.ts(sim[,7])
+plot.ts(sim[,8])
+plot.ts(sim[,9])
+plot.ts(sim[,10])
+```
+
+Check the autocorrelation for the simulated time series
+```{r}
+acf(sim)
+```
+
+
+### Simulation for stationary block bootstrap with SOBI
+```{r, eval=FALSE}
+sims <- 500
+min200_stationary_sobi_20 <- numeric(sims)
+
+
+min500_stationary_sobi_20 <- numeric(sims)
+
+
+min1000_stationary_sobi_20 <- numeric(sims)
+
+
+min2000_stationary_sobi_20 <- numeric(sims)
+
+
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/20, "sobi")
+  min200_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/20, "sobi")
+  min500_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/20, "sobi")
+  min1000_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(108)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/20, "sobi")
+  min2000_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r, eval=FALSE}
+table(min200_stationary_sobi_20-1)
+table(min500_stationary_sobi_20-1)
+table(min1000_stationary_sobi_20-1)
+table(min2000_stationary_sobi_20-1)
+```
+
+```{r, eval=FALSE}
+sims <- 500
+min200_stationary_sobi_40 <- numeric(sims)
+
+
+min500_stationary_sobi_40 <- numeric(sims)
+
+
+min1000_stationary_sobi_40 <- numeric(sims)
+
+
+min2000_stationary_sobi_40 <- numeric(sims)
+
+
+set.seed(105)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/40, "sobi")
+  min200_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/40, "sobi")
+  min500_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/40, "sobi")
+  min1000_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/40, "sobi")
+  min2000_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r, eval=FALSE}
+table(min200_stationary_sobi_40-1)
+table(min500_stationary_sobi_40-1)
+table(min1000_stationary_sobi_40-1)
+table(min2000_stationary_sobi_40-1)
+```
+
+
+### Simulation for stationary block bootstrap with AMUSE
+```{r}
+sims <- 500
+min200_stationary_amuse_20 <- numeric(sims)
+
+
+min500_stationary_amuse_20 <- numeric(sims)
+
+
+min1000_stationary_amuse_20 <- numeric(sims)
+
+
+min2000_stationary_amuse_20 <- numeric(sims)
+
+
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/20, "amuse")
+  min200_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/20, "amuse")
+  min500_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/20, "amuse")
+  min1000_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/20, "amuse")
+  min2000_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r}
+table(min200_stationary_amuse_20)
+table(min500_stationary_amuse_20)
+table(min1000_stationary_amuse_20)
+table(min2000_stationary_amuse_20)
+```
+
+```{r}
+sims <- 500
+min200_stationary_amuse_40 <- numeric(sims)
+
+
+min500_stationary_amuse_40 <- numeric(sims)
+
+
+min1000_stationary_amuse_40 <- numeric(sims)
+
+
+min2000_stationary_amuse_40 <- numeric(sims)
+
+
+set.seed(105)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/40, "amuse")
+  min200_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/40, "amuse")
+  min500_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/40, "amuse")
+  min1000_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/40, "amuse")
+  min2000_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r}
+table(min200_stationary_amuse_40-1)
+table(min500_stationary_amuse_40-1)
+table(min1000_stationary_amuse_40-1)
+table(min2000_stationary_amuse_40-1)
+```
+
+### Simulation for fixed block bootstrap with SOBI
+```{r, eval=FALSE}
+sims <- 500
+min200_fixed_sobi_20 <- numeric(sims)
+
+
+min500_fixed_sobi_20 <- numeric(sims)
+
+
+min1000_fixed_sobi_20 <- numeric(sims)
+
+
+min2000_fixed_sobi_20 <- numeric(sims)
+
+
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 20, "sobi")
+  min200_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 20, "sobi")
+  min500_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 20, "sobi")
+  min1000_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(108)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 20, "sobi")
+  min2000_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r, eval=FALSE}
+table(min200_fixed_sobi_20-1)
+table(min500_fixed_sobi_20-1)
+table(min1000_fixed_sobi_20-1)
+table(min2000_fixed_sobi_20-1)
+```
+
+```{r, eval=FALSE}
+sims <- 500
+min200_fixed_sobi_40 <- numeric(sims)
+
+
+min500_fixed_sobi_40 <- numeric(sims)
+
+
+min1000_fixed_sobi_40 <- numeric(sims)
+
+
+min2000_fixed_sobi_40 <- numeric(sims)
+
+
+set.seed(105)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 40, "sobi")
+  min200_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
+  print(i)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 40, "sobi")
+  min500_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
+  print(i)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 40, "sobi")
+  min1000_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
+  print(i)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 40, "sobi")
+  min2000_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
+  print(i)
+}
+```
+
+```{r, eval=FALSE}
+table(min200_fixed_sobi_40-1)
+table(min500_fixed_sobi_40-1)
+table(min1000_fixed_sobi_40-1)
+table(min2000_fixed_sobi_40-1)
+```
+
+### Simulation for fixed block bootstrap with AMUSE
+```{r}
+sims <- 500
+min200_fixed_amuse_20 <- numeric(sims)
+
+
+min500_fixed_amuse_20 <- numeric(sims)
+
+
+min1000_fixed_amuse_20 <- numeric(sims)
+
+
+min2000_fixed_amuse_20 <- numeric(sims)
+
+
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 20, "amuse")
+  min200_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 20, "amuse")
+  min500_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+set.seed(107)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 20, "amuse")
+  min1000_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 20, "amuse")
+  min2000_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r}
+table(min200_fixed_amuse_20-1)
+table(min500_fixed_amuse_20-1)
+table(min1000_fixed_amuse_20-1)
+table(min2000_fixed_amuse_20-1)
+```
+
+```{r}
+sims <- 500
+min200_fixed_amuse_40 <- numeric(sims)
+
+
+min500_fixed_amuse_40 <- numeric(sims)
+
+
+min1000_fixed_amuse_40 <- numeric(sims)
+
+min2000_fixed_amuse_40 <- numeric(sims)
+
+
+set.seed(105)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 40, "amuse")
+  min200_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+set.seed(106)
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 40, "amuse")
+  min500_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 40, "amuse")
+  min1000_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+
+for (i in 1:sims) {
+  ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 40, "amuse")
+  min2000_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+}
+```
+
+```{r}
+table(min200_fixed_amuse_40-1)
+table(min500_fixed_amuse_40-1)
+table(min1000_fixed_amuse_40-1)
+table(min2000_fixed_amuse_40-1)
+```
+
+## Part E: Application to the course data
+
+Apply the methods to the time-series data set provided for the assignment in Moodle.
+Use both the fixed-block and stationary bootstrap versions of the ladle estimator. Select and
+justify the block-length choices used in the final analysis.
+
+Your analysis should include:
+
+• the estimated signal dimension and the evidence supporting it;
+
+• an appropriate visualization of the ladle criterion and its components;
+
+• a comparison of the results obtained with the two bootstrap methods;
+
+• a sensitivity analysis for the block-length choice;
+
+• a discussion of what the results imply for the structure of the observed multivariate
+time series.
+
+If the two bootstrap approaches or different reasonable block lengths lead to different conclu-
+sions, this should be investigated and discussed rather than hidden by reporting only one
+result.
+
+### Answer:
+
+The previous part indicates that using SOBI for diagonalisation gives the most accurate results. For bigger block sizes there is almost no difference between fixed block bootstrap and stationary block bootstrap. The fixed block bootstrap method is faster, based on how long the simulations took.
+
+```{r, eval=FALSE}
+set.seed(456)
+ts_ladle <- ladle(ts_data, 500, "fixed", 40, "sobi")
+ts_ladle2 <- ladle(ts_data, 500, "fixed", 60, "sobi")
+ts_ladle3 <- ladle(ts_data, 250, "stationary", 1/40, "sobi")
+ts_ladle4 <- ladle(ts_data, 250, "stationary", 1/60, "sobi")
+ts_ladle5 <- ladle(ts_data, 5, "fixed", 60, "sobi")
+ts_ladle6 <- ladle(ts_data, 1000, "fixed", 60, "sobi")
+```
+
+```{r, eval=FALSE}
+plot(ts_ladle$g, type = "l")
+plot(ts_ladle2$g, type = "l")
+plot(ts_ladle3$g, type = "l")
+plot(ts_ladle4$g, type = "l")
+plot(ts_ladle5$g, type = "l")
+plot(ts_ladle6$g, type = "l")
+```
+
+# Task 2: Bayesian mixture modelling with MCMC
+
+
+
+
+$$
+\mu_1,\mu_2\overset{\mathrm{ind}}{\sim}N(m_0,s_0^2)
+$$
+The standardized observations have a sample mean of $0$ and a sample variance of $1$. So we choose $m_0 = 0$, because the observations are centred around zero after standardization.
+
+The prior standard deviation $s_0$ have to choose how widely we think the component means can vary around $m_0$. For example, suppose we believe that the component means lie within the interval $[-10,10]$. We can choose $s_0 = 5$, giving the prior distribution
+$\mu_1,\mu_2 \overset{\mathrm{ind}}{\sim} N(0,5^2)$
+For a normal distribution, the approximate 95\% prior interval is
+$$
+\begin{aligned}
+[m_0 - 1.96s_0,\; m_0 + 1.96s_0]
+&= [0 - 1.96(5),\; 0 + 1.96(5)] \\
+&= [-9.80,\; 9.80].
+\end{aligned}
+$$
+Therefore, this prior assigns approximately 95\% probability to each component mean being between $-9.80$ and $9.80$.
+$$
+\pi\sim\operatorname{Beta}(a,b)
+$$
+$0<\pi<1$, therefore all values have to be between 0 and 1. if the prior distribution is beta, then the obvious choice is ${Beta}(1,1)$, which is a uniform prior.
+
+$$
+\sigma^2\sim\operatorname{InvGamma}(\alpha_0,\beta_0)
+$$
+Because the standardized data have overall variance 1, by taking $\sigma^2\sim\operatorname{InvGamma}(2,1)$, which means $\alpha_0=2$ and $\beta_0=1$, gives $E(\sigma^2)=1$
+$$
+E(\sigma^2)=\frac{\beta_0}{\alpha_0-1}=\frac{1}{2-1}=1
+$$
+Also, with shape 2, the inverse-Gamma distribution has substantial uncertainty, including a heavy right tail. 
+
+
+## Part A: Latent-variable representation and Gibbs sampler
+
+(a) Conditional distribution of $Z_i$
+
+Objective is to find the full conditional distribution of
+$Z_i$, given $y_i$, $\mu_1$, $\mu_2$, $\pi$, and $\sigma^2$.
+
+The two-component Gaussian mixture model is
+
+$$
+Y_i\mid Z_i=k\sim N(\mu_k,\sigma^2),
+\qquad k\in\{1,2\}
+$$
+
+Therefore, for component 1,
+
+$$
+Y_i\mid Z_i=1\sim N(\mu_1,\sigma^2)
+$$
+$$
+P(Z_i=1)=\pi
+$$
+
+and for component 2,
+
+$$
+Y_i\mid Z_i=2\sim N(\mu_2,\sigma^2)
+$$
+$$
+P(Z_i=2)=1-\pi
+$$
+
+Using the multiplication rule,
+
+$$
+f(y_i,z_i)=f(y_i\mid z_i)P(Z_i=z_i)
+$$
+
+if $Z_i = 1$:
+\[
+f(y_i,z_i=1)=\pi f_1(y_i)
+\tag{1}
+\]
+
+if $Z_i = 2$:
+\[
+f(y_i,z_i=2)=(1-\pi)f_2(y_i)
+\tag{2}
+\]
+
+For $n$ observations, let $n_1$ denote the number
+of observations allocated to component 1 and $n_2$ denote
+the number allocated to component 2.
+
+Then,
+
+$$
+n_1+n_2=n
+$$
+
+Complete likelihood
+$$
+f(y,z)
+=
+\pi^{n_1}(1-\pi)^{n_2}
+\prod_{i:z_i=1}f_1(y_i)
+\prod_{i:z_i=2}f_2(y_i)
+$$
+
+From Bayes' theorem,
+\[
+P(Z_i=1\mid y_i)
+=
+\frac{f(y_i,Z_i=1)}{f(y_i)}
+\tag{3}
+\]
+
+Total probability,
+\[
+\begin{aligned}
+f(y_i)
+&=f(y_i,Z_i=1)+f(y_i,Z_i=2)\\
+&=\pi f_1(y_i)+(1-\pi)f_2(y_i)
+\end{aligned}
+\tag{4}
+\]
+
+Substituting (1) and (4) into (3),
+
+$$
+\boxed{
+P(Z_i=1\mid y_i)
+=
+\frac{\pi f_1(y_i)}
+{\pi f_1(y_i)+(1-\pi)f_2(y_i)}
+}
+$$
+
+Similarly,
+
+$$
+\boxed{
+P(Z_i=2\mid y_i)
+=
+\frac{(1-\pi)f_2(y_i)}
+{\pi f_1(y_i)+(1-\pi)f_2(y_i)}
+}
+$$
+
+(b) Conditional distribution of $\mu_1$ and $\mu_2$
+
+First, consider the conditional distribution of $\mu_1$.
+
+Objective is to find
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+$$
+
+The prior distribution is
+
+$$
+\mu_1\sim N(m_0,s_0^2)
+$$
+
+From Bayes' theorem,
+\[
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+f(y\mid z,\mu_1,\sigma^2)f(\mu_1)
+\tag{5}
+\]
+
+The normal prior density is
+$$
+f(\mu_1)
+=
+\frac{1}{\sqrt{2\pi_{\mathrm{math}}s_0^2}}
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+$$
+Ignoring constants that do not depend on $\mu_1$,
+\[
+f(\mu_1)
+\propto
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+\tag{6}
+\]
+
+The likelihood contains only observations allocated
+to component 1.
+
+Therefore,
+
+$$
+f(y\mid z,\mu_1,\sigma^2)
+\propto
+\prod_{i:z_i=1}
+\exp\left(
+-\frac{(y_i-\mu_1)^2}{2\sigma^2}
+\right)
+$$
+\[
+f(y\mid z,\mu_1,\sigma^2)
+\propto
+\exp\left(
+-\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}
+{2\sigma^2}
+\right)
+\tag{7}
+\]
+
+Substituting (6) and (7) into (5),
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\left(
+-\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}
+{2\sigma^2}
+\right)
+\times
+\exp\left(
+-\frac{(\mu_1-m_0)^2}{2s_0^2}
+\right)
+$$
+
+Combining the exponential terms,
+
+$$
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\left[
+-\frac12
+\left(
+\frac{\sum_{i:z_i=1}(y_i-\mu_1)^2}{\sigma^2}
++
+\frac{(\mu_1-m_0)^2}{s_0^2}
+\right)
+\right]
+$$
+
+Expanding the squared terms,
+
+$$
+\begin{aligned}
+\sum_{i:z_i=1}(y_i-\mu_1)^2
+&=
+\sum_{i:z_i=1}y_i^2
+-2\mu_1\sum_{i:z_i=1}y_i
++n_1\mu_1^2
+\end{aligned}
+$$
+
+and
+
+$$
+(\mu_1-m_0)^2
+=
+\mu_1^2-2\mu_1m_0+m_0^2
+$$
+
+Removing terms that do not depend on $\mu_1$,
+
+\[
+f(\mu_1\mid y,z,\sigma^2)
+\propto
+\exp\Bigg[
+-\left(
+\frac{n_1}{2\sigma^2}
++\frac{1}{2s_0^2}
+\right)\mu_1^2
++
+\left(
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++\frac{m_0}{s_0^2}
+\right)\mu_1
+\Bigg]
+\tag{8}
+\]
+
+Normal density can be written as
+\[
+\begin{aligned}
+f(x)
+&\propto
+\exp\left(
+-\frac{(x-m)^2}{2v}
+\right)
+\\
+&\propto
+\exp\left(
+-\frac{x^2-2xm+m^2}{2v}
+\right)
+\end{aligned}
+\]
+\[
+f(x)
+\propto
+\exp\left(
+-\frac{x^2}{2v}+\frac{m}{v}x
+\right)
+\tag{9}
+\]
+
+Comparing (8) and (9), we obtain
+
+$$
+\frac{1}{2v_1}
+=
+\frac{n_1}{2\sigma^2}
++
+\frac{1}{2s_0^2}
+$$
+
+Therefore,
+
+$$
+\boxed{
+v_1=
+\left(
+\frac{n_1}{\sigma^2}
++
+\frac{1}{s_0^2}
+\right)^{-1}
+}
+$$
+
+Similarly,
+
+$$
+\frac{m_1}{v_1}
+=
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+$$
+
+Therefore,
+
+$$
+\boxed{
+m_1=
+v_1
+\left(
+\frac{\sum_{i:z_i=1}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+\right)
+}
+$$
+
+The conditional distribution for $\mu_1$,
+$$
+\boxed{
+\mu_1\mid y,z,\sigma^2
+\sim N(m_1,v_1)
+}
+$$
+
+Similarly, for $\mu_2$,
+$$
+\boxed{
+\mu_2\mid y,z,\sigma^2
+\sim N(m_2,v_2)
+}
+$$
+
+where
+$$
+\boxed{
+v_2=
+\left(
+\frac{n_2}{\sigma^2}
++
+\frac{1}{s_0^2}
+\right)^{-1}
+}
+$$
+
+and
+$$
+\boxed{
+m_2=
+v_2
+\left(
+\frac{\sum_{i:z_i=2}y_i}{\sigma^2}
++
+\frac{m_0}{s_0^2}
+\right)
+}
+$$
+
+
+(c) Conditional distribution of $\pi$
+
+Objective is
+$$
+f(\pi\mid z)
+$$
+
+We know that
+
+$$
+P(Z_i=1)=\pi
+\qquad
+P(Z_i=2)=1-\pi
+$$
+
+Prior distribution
+
+$$
+\pi\sim\operatorname{Beta}(a,b)
+$$
+
+Beta density
+\[
+f(\pi)\propto
+\pi^{a-1}(1-\pi)^{b-1}
+\tag{10}
+\]
+
+Likelihood
+
+\[
+f(z\mid\pi)
+=
+\pi^{n_1}(1-\pi)^{n_2}
+\tag{11}
+\]
+
+From Bayes' theorem,
+
+$$
+f(\pi\mid z)
+\propto
+f(z\mid\pi)f(\pi)
+$$
+
+Substituting (10) and (11),
+
+$$
+\begin{aligned}
+f(\pi\mid z)
+&\propto
+\pi^{n_1}(1-\pi)^{n_2}
+\times
+\pi^{a-1}(1-\pi)^{b-1}
+\\
+&\propto
+\pi^{n_1+a-1}(1-\pi)^{n_2+b-1}
+\end{aligned}
+$$
+
+Therefore,
+
+$$
+\boxed{
+\pi\mid z
+\sim
+\operatorname{Beta}(a+n_1,b+n_2)
+}
+$$
+
+
+(d) Conditional distribution of $\sigma^2$
+
+Objective is conditional distribution
+of the variance $\sigma^2$
+
+Prior distribution
+$$
+\sigma^2
+\sim
+\operatorname{InvGamma}(\alpha_0,\beta_0)
+$$
+
+Inverse-Gamma density
+\[
+f(\sigma^2)
+\propto
+(\sigma^2)^{-(\alpha_0+1)}
+\exp\left(
+-\frac{\beta_0}{\sigma^2}
+\right)
+\tag{12}
+\]
+
+Likelihood
+\[
+f(y\mid z,\mu_1,\mu_2,\sigma^2)
+\propto
+(\sigma^2)^{-n/2}
+\exp\left[
+-\frac{
+\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{2\sigma^2}
+\right]
+\tag{13}
+\]
+Where,
+$$
+\mu_{z_i}
+=
+\begin{cases}
+\mu_1, & z_i=1\\
+\mu_2, & z_i=2
+\end{cases}
+$$
+
+From Bayes' theorem,
+
+$$
+f(\sigma^2\mid y,z,\mu_1,\mu_2)
+\propto
+f(y\mid z,\mu_1,\mu_2,\sigma^2)
+f(\sigma^2)
+$$
+
+Substituting (12) and (13),
+
+$$
+f(\sigma^2\mid\cdots)
+\propto
+(\sigma^2)^{-n/2}
+\exp\left[
+-\frac{
+\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{2\sigma^2}
+\right]
+\times
+(\sigma^2)^{-(\alpha_0+1)}
+\exp\left(
+-\frac{\beta_0}{\sigma^2}
+\right)
+$$
+
+Combining the powers and exponential terms,
+
+$$
+f(\sigma^2\mid\cdots)
+\propto
+(\sigma^2)^{-(\alpha_0+n/2+1)}
+\times
+\exp\left[
+-\frac{
+\beta_0+
+\frac12\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+}{\sigma^2}
+\right]
+$$
+
+This is the kernel of an inverse-Gamma distribution.
+
+Therefore,
+
+$$
+\boxed{
+\sigma^2\mid y,z,\mu_1,\mu_2
+\sim
+\operatorname{InvGamma}
+\left(
+\alpha_0+\frac{n}{2},
+\beta_0+
+\frac12\sum_{i=1}^{n}(y_i-\mu_{z_i})^2
+\right)
+}
+$$
+
+Funtion:
+Input	Meaning
+y:	Observed data
+n_iter:	Number of stored MCMC states, including the initial state
+m0:	Prior mean of \(\mu_1,\mu_2\)
+s0:	Prior standard deviation of the means
+a, b:	Beta prior hyperparameters
+alpha0, beta0:	Inverse-Gamma prior hyperparameters
+mu1_init:	Starting value for \(\mu_1\)
+mu2_init:	Starting value for \(\mu_2\)
+pi_init:	Starting value for \(\pi\)
+sigma2_init:	Starting value for \(\sigma^2\)
+
+```{r T2 A}
+#Gibbs sampler
+
+
+gibbs_sampler <- function(y, n_iter = 12000,
+                          m0 = 0, s0 = 5,
+                          a = 1, b = 1,
+                          alpha0 = 2, beta0 = 1,
+                          mu1_init = -1,
+                          mu2_init = 1,
+                          pi_init = 0.5,
+                          sigma2_init = 1) {
+
+  n <- length(y)
+
+  # Store posterior draws
+  mu1 <- numeric(n_iter)
+  mu2 <- numeric(n_iter)
+  pi <- numeric(n_iter)
+  sigma2 <- numeric(n_iter)
+
+  # Store latent allocations
+  Z <- matrix(NA_integer_, nrow = n_iter, ncol = n)
+
+  # Initial parameter values
+  mu1[1] <- mu1_init
+  mu2[1] <- mu2_init
+  pi[1] <- pi_init
+  sigma2[1] <- sigma2_init
+
+  # Initial allocations
+  Z[1, ] <- ifelse(y < (mu1_init + mu2_init)/2, 1L, 2L) 
+
+  for (t in 2:n_iter) {
+    
+    ##########################################
+    # (a): Update Z_i
+    ##########################################
+
+    #Calculate the log density for component 1
+    log_f1 <- dnorm(
+      y, mean = mu1[t-1],
+      sd = sqrt(sigma2[t-1]),
+      log = TRUE
+    )
+
+    ##Calculate the log density for component 2
+    log_f2 <- dnorm(
+      y, mean = mu2[t-1],
+      sd = sqrt(sigma2[t-1]),
+      log = TRUE
+    )
+
+    # Conditional probability of component 1 (P(Z=1|y))
+    w <- plogis(
+      log(pi[t-1]) + log_f1 -
+      log1p(-pi[t-1]) - log_f2
+    )
+
+    Z[t, ] <- ifelse(runif(n) < w, 1L, 2L) #if P(Z|y)<pi, assigned to 1L, otherwise assigned to 2L
+
+    z <- Z[t, ]
+
+    n1 <- sum(z == 1)
+    n2 <- sum(z == 2)
+
+    ##########################################
+    # (b1): Update mu1
+    ##########################################
+
+    v1 <- 1 / (n1 / sigma2[t-1] + 1 / s0^2) #conditional variance
+    m1 <- v1 * ((sum(y[z == 1]) / sigma2[t-1]) + (m0 / s0^2)) #conditional mean
+    
+    mu1[t] <- rnorm(1, mean = m1, sd = sqrt(v1)) #Generate a new value for \(\mu_1\)
+
+    ##########################################
+    # (b2): Update mu2
+    ##########################################
+
+    v2 <- 1 / (n2 / sigma2[t-1] + 1 / s0^2) #conditional variance
+    m2 <- v2 * ((sum(y[z == 2]) / sigma2[t-1]) +(m0 / s0^2)) #conditional mean
+
+    mu2[t] <- rnorm(1, mean = m2, sd = sqrt(v2)) #Generate a new value for \(\mu_2\)
+
+    ##########################################
+    # (c): Update pi
+    ##########################################
+
+    pi[t] <- rbeta(1, shape1 = a + n1, shape2 = b + n2)
+
+    ##########################################
+    # Step 5: Update sigma2
+    ##########################################
+
+    mu_z <- ifelse(z == 1, mu1[t], mu2[t]) #assign mean corresponding to each observation
+    alpha_n <- alpha0 + n / 2
+    beta_n <- beta0 + 0.5 * sum((y - mu_z)^2)
+
+    # Inverse-Gamma random variable
+    sigma2[t] <- 1 / rgamma(1, shape = alpha_n, rate = beta_n)
+  }
+
+  return(list(draws = data.frame(mu1, mu2, pi, sigma2), Z = Z))
+}
+
+```
+
+## Part B
+
+```{r T2 B1}
+
+simulate_mixture <- function(n, mu1, mu2, sigma2, pi) {
+
+  # Generate component allocations
+  z <- ifelse(runif(n) < pi, 1L, 2L)
+
+  # Generate observations from their components
+  y <- rnorm(n, mean = ifelse(z == 1, mu1, mu2), sd = sqrt(sigma2)  )
+
+  return(list(y = y, z = z))
+}
+
+
+set.seed(123)
+
+# Mixture 1: Clearly separated
+data_sep <- simulate_mixture(
+  n = 200,
+  mu1 = -3,
+  mu2 = 3,
+  sigma2 = 1,
+  pi = 0.5
+)
+
+# Mixture 2: Overlapping
+data_overlap <- simulate_mixture(
+  n = 200,
+  mu1 = -0.5,
+  mu2 = 0.5,
+  sigma2 = 1,
+  pi = 0.5
+)
+
+
+pdf("Clearly_Separated.pdf", width = 8, height = 6)
+
+par(mar = c(3, 3, 2, 1))
+
+hist(data_sep$y,
+     breaks = 25,
+     main = "Mixture 1:\nClearly Separated",
+     xlab = "Y",
+     probability = TRUE)
+
+dev.off()
+
+pdf("Substantially_Overlapping.pdf", width = 8, height = 6)
+
+par(mar = c(3, 3, 2, 1))
+
+hist(data_overlap$y,
+     breaks = 25,
+     main = "Mixture 2: \nSubstantially Overlapping",
+     xlab = "Y",
+     probability = TRUE)
+
+dev.off()
+
+
+```
+
+On the mixture 1, two populations create two peaks. So the observations provide strong information about their allocations.
+On the mixture 2, populations produce one heavily overlapping mixture. So observed data provide weaker information about the separate component means and allocations.
+
+In the mixture 1, an observation of \(-3\) is very likely to belong to component 1, while \(+3\) is very likely to belong to component 2. But in mixture 2, an observation of \(0\) is equally likely to have come from either component. Therefore the mixture 2, which is substantial overlap case is the more difficult MCMC mixing.
+
+
+```{r T2 B2}
+# Initial values for the eight chains
+initial_values <- list(
+  c(-0.5, 0.5),
+  c(0.5, -0.5),
+  c(-3, 3),
+  c(3, -3)
+)
+
+run_chains <- function(y, n_iter = 12000) {
+
+  chains <- vector("list", 4)
+
+  for (j in 1:4) {
+
+    chains[[j]] <- gibbs_sampler(
+      y = y,
+      n_iter = n_iter,
+      m0 = 0,
+      s0 = 5,
+      a = 1,
+      b = 1,
+      alpha0 = 2,
+      beta0 = 1,
+      mu1_init = initial_values[[j]][1],
+      mu2_init = initial_values[[j]][2],
+      pi_init = 0.5,
+      sigma2_init = 1
+    )
+  }
+
+  return(chains)
+}
+
+#run both simulations
+set.seed(111)
+chains_sep <- run_chains(data_sep$y)
+
+set.seed(222)
+chains_overlap <- run_chains(data_overlap$y)
+
+#Remove burn in
+burnin <- 2000
+
+keep_sep <- lapply(chains_sep, function(x) {x$draws[-(1:burnin), ]})
+keep_overlap <- lapply(chains_overlap, function(x) {x$draws[-(1:burnin), ]})
+
+```
+
+```{r T2 B3}
+pdf("MCMC.pdf", width = 8, height = 6)
+
+par(mfrow = c(2, 4), mar = c(3, 3, 2, 1))
+
+# Clearly separated
+for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
+  plot(
+    keep_sep[[1]][[parameter]],
+    type = "l",
+    main = paste("Separated:", parameter),
+    xlab = "Iteration",
+    ylab = parameter
+  )
+}
+
+# Overlapping
+for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
+  plot(
+    keep_overlap[[1]][[parameter]],
+    type = "l",
+    main = paste("Overlapping:", parameter),
+    xlab = "Iteration",
+    ylab = parameter
+  )
+}
+
+dev.off()
+
+```
+
+On clearly separated case \(\mu_1,\mu_2\), \(\pi\), \(\sigma^2\) seems to be concentrated around stable values.
+
+On Overlapping case \(\mu_1,\mu_2\) seems to be stay relatively close to zero, but there are several very large spikes. On \(\pi\), mixing proportion moves over a wide range compare to the clearly separated case. but \(\sigma^2\) seems to be concentrated around stable value.
+
+```{r T2 B4}
+plot_chains <- function(chains, parameter, title) {
+
+  values <- lapply(chains, function(x) x[[parameter]])
+  
+  old_par <- par(no.readonly = TRUE)
+  par(mar = c(3, 3, 2, 7), xpd = NA)
+
+  plot(values[[1]], type = "l",
+       ylim = range(unlist(values)),
+       col = 1,
+       main = title,
+       xlab = "Iteration",
+       ylab = parameter)
+
+  for (j in 2:length(values)) {
+    lines(values[[j]], col = j)
+  }
+  
+  par(xpd = TRUE)
+
+  legend(
+    x = par("usr")[2],
+    y = par("usr")[4],
+    legend = paste("Chain", 1:length(values)),
+    col = seq_along(values),
+    lty = 1,
+    cex = 0.8,
+    bty = "o",
+    xjust = 0,
+    yjust = 1
+  )
+
+  par(old_par)
+
+}
+
+```
+
+
+
+```{r T2 B5}
+
+pdf("MCMC_mu1.pdf", width = 8, height = 6)
+
+plot_chains(
+  keep_sep,
+  parameter = "mu1",
+  title = "Separated: mu1"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "mu1",
+  title = "Overlapping: mu1"
+)
+
+dev.off()
+
+```
+
+```{r T2 B6}
+
+pdf("MCMC_mu2.pdf", width = 8, height = 6)
+
+
+plot_chains(
+  keep_sep,
+  parameter = "mu2",
+  title = "Separated: mu2"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "mu2",
+  title = "Overlapping: mu2"
+)
+
+dev.off()
+
+```
+
+```{r T2 B7}
+
+pdf("MCMC_pi.pdf", width = 8, height = 6)
+
+plot_chains(
+  keep_sep,
+  parameter = "pi",
+  title = "Separated: pi"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "pi",
+  title = "Overlapping: pi"
+)
+
+dev.off()
+
+
+```
+
+```{r T2 B8}
+
+pdf("MCMC_sigma2.pdf", width = 8, height = 6)
+
+plot_chains(
+  keep_sep,
+  parameter = "sigma2",
+  title = "Separated: sigma2"
+)
+
+plot_chains(
+  keep_overlap,
+  parameter = "sigma2",
+  title = "Overlapping: sigma2"
+)
+
+dev.off()
+
+
+```
+
+```{r T2 B_1}
+
+# Order component labels
+order_labels <- function(d) {
+
+  data.frame(
+    mu1 = pmin(d$mu1, d$mu2),
+    mu2 = pmax(d$mu1, d$mu2),
+
+    pi = ifelse(d$mu1 <= d$mu2,
+                d$pi, 1 - d$pi),
+
+    sigma2 = d$sigma2
+  )
+}
+
+# Apply ordering to both datasets
+sep_ordered <- lapply(keep_sep, order_labels)
+overlap_ordered <- lapply(keep_overlap, order_labels)
+
+
+```
+
+
+
+
+```{r T2 B_2}
+
+#R hat
+
+
+#Rhat function
+rhat <- function(chains) {
+
+  # Rows = iterations, columns = chains
+  M <- nrow(chains)
+  K <- ncol(chains)
+
+  chain_means <- colMeans(chains)
+
+  W <- mean(apply(chains, 2, var))
+  B <- M * var(chain_means)
+
+  V_hat <- ((M - 1) / M) * W + B / M
+
+  sqrt(V_hat / W)
+}
+
+# Calculate Rhat values for the clearly separated mixture
+rhat_sep <- c(
+  mu1 = rhat(sapply(sep_ordered, function(d) d$mu1)),
+  mu2 = rhat(sapply(sep_ordered, function(d) d$mu2)),
+  pi = rhat(sapply(sep_ordered, function(d) d$pi)),
+  sigma2 = rhat(sapply(sep_ordered, function(d) d$sigma2))
+)
+
+# Calculate Rhat values for the overlapping mixture
+rhat_overlap <- c(
+  mu1 = rhat(sapply(overlap_ordered, function(d) d$mu1)),
+  mu2 = rhat(sapply(overlap_ordered, function(d) d$mu2)),
+  pi = rhat(sapply(overlap_ordered, function(d) d$pi)),
+  sigma2 = rhat(sapply(overlap_ordered, function(d) d$sigma2))
+)
+
+# Create a comparison table
+rhat_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(rhat_sep, 6),
+  Overlapping = round(rhat_overlap, 6),
+  row.names = NULL
+)
+
+print(rhat_table)
+
+
+
+
+
+```
+```{r T2 B_3}
+
+#Autocorrelation
+
+pdf("Autocorrelation.pdf", width = 8, height = 6)
+
+# Autocorrelation - Clearly separated mixture
+par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+
+acf(sep_ordered[[1]]$mu1, main = "Separated: mu1")
+acf(sep_ordered[[1]]$mu2, main = "Separated: mu2")
+acf(sep_ordered[[1]]$pi, main = "Separated: pi")
+acf(sep_ordered[[1]]$sigma2, main = "Separated: sigma2")
+
+
+
+# Autocorrelation - Overlapping mixture
+par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+
+acf(overlap_ordered[[1]]$mu1, main = "Overlapping: mu1")
+acf(overlap_ordered[[1]]$mu2, main = "Overlapping: mu2")
+acf(overlap_ordered[[1]]$pi, main = "Overlapping: pi")
+acf(overlap_ordered[[1]]$sigma2, main = "Overlapping: sigma2")
+
+
+dev.off()
+
+
+```
+
+
+```{r T2 B_4}
+
+#Effective sample size
+
+
+
+ess <- function(x) {
+
+  # Calculate autocorrelation
+  rho <- as.numeric(
+    acf(x, plot = FALSE, lag.max = 1000)$acf
+  )[-1]
+
+  # Use positive adjacent pairs of autocorrelations
+  pair_sum <- 0
+
+  for (k in 1:floor(length(rho) / 2)) {
+
+    pair <- rho[2*k - 1] + rho[2*k]
+
+    if (pair <= 0) break
+
+    pair_sum <- pair_sum + pair
+  }
+
+  # Effective sample size
+  tau <- 1 + 2 * pair_sum
+
+  length(x) / tau
+}
+
+
+
+# Clearly separated mixture
+ess_sep <- c(
+  mu1 = mean(sapply(sep_ordered, function(d) ess(d$mu1))),
+  mu2 = mean(sapply(sep_ordered, function(d) ess(d$mu2))),
+  pi = mean(sapply(sep_ordered, function(d) ess(d$pi))),
+  sigma2 = mean(sapply(sep_ordered, function(d) ess(d$sigma2)))
+)
+
+# Overlapping mixture
+ess_overlap <- c(
+  mu1 = mean(sapply(overlap_ordered, function(d) ess(d$mu1))),
+  mu2 = mean(sapply(overlap_ordered, function(d) ess(d$mu2))),
+  pi = mean(sapply(overlap_ordered, function(d) ess(d$pi))),
+  sigma2 = mean(sapply(overlap_ordered, function(d) ess(d$sigma2)))
+)
+
+# Comparison table
+ess_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(ess_sep, 2),
+  Overlapping = round(ess_overlap, 2),
+  row.names = NULL
+)
+
+print(ess_table)
+
+
+
+```
+
+
+
+```{r T2 B_5}
+
+#Monte Carlo standard error
+
+
+# Calculate MCSE
+
+mcse <- function(x) {
+
+  sd(x) / sqrt(ess(x))
+}
+
+
+
+# Clearly separated mixture
+mcse_sep <- c(
+  mu1 = mean(sapply(sep_ordered, function(d) mcse(d$mu1))),
+  mu2 = mean(sapply(sep_ordered, function(d) mcse(d$mu2))),
+  pi = mean(sapply(sep_ordered, function(d) mcse(d$pi))),
+  sigma2 = mean(sapply(sep_ordered, function(d) mcse(d$sigma2)))
+)
+
+# Overlapping mixture
+mcse_overlap <- c(
+  mu1 = mean(sapply(overlap_ordered, function(d) mcse(d$mu1))),
+  mu2 = mean(sapply(overlap_ordered, function(d) mcse(d$mu2))),
+  pi = mean(sapply(overlap_ordered, function(d) mcse(d$pi))),
+  sigma2 = mean(sapply(overlap_ordered, function(d) mcse(d$sigma2)))
+)
+
+# Comparison table
+mcse_table <- data.frame(
+  Parameter = c("mu1", "mu2", "pi", "sigma2"),
+  Clearly_Separated = round(mcse_sep, 6),
+  Overlapping = round(mcse_overlap, 6),
+  row.names = NULL
+)
+
+print(mcse_table)
+
+
+
+
+
+```
+
+
+
+
+## Part C
+
+### Q1
+
+```{r T2 C0}
+data_sep_c <- simulate_mixture(
+  n = 200,
+  mu1 = -3,
+  mu2 = 3,
+  sigma2 = 1,
+  pi = 0.3
+)
+#change the pi to 0.3, so that it make it easier to identify the  label switching
+
+set.seed(111)
+chains_sep_c <- run_chains(data_sep_c$y)
+
+keep_sep_c <- lapply(chains_sep_c, function(x) {x$draws[-(1:burnin), ]})
+
+```
+
+```{r T2 C1}
+
+#Label switching for means
+
+draws <- chains_sep_c[[1]]$draws
+
+burnin <- 2000
+draws <- draws[-(1:burnin), ]
+
+pdf("lable_mu.pdf", width = 8, height = 6)
+
+par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
+
+for (j in 1:2) {
+
+  d <- chains_sep_c[[j]]$draws
+  d <- d[-(1:burnin), ]
+
+  plot(d$mu1,
+       type = "l",
+       col = "blue",
+       ylim = range(d$mu1, d$mu2),
+       main = paste("Chain", j),
+       xlab = "Iteration",
+       ylab = "Mean")
+
+  lines(d$mu2, col = "red")
+  
+  
+}
+
+dev.off()
+
+
+#Label switching for pi
+
+pdf("lable_pi.pdf", width = 8, height = 6)
+
+par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
+
+for (j in 1:2) {
+
+  d <- chains_sep_c[[j]]$draws
+  d <- d[-(1:burnin), ]
+
+  plot(
+    d$pi,
+    type = "l",
+    col = "blue",
+    ylim = c(0, 1),
+    main = paste("Chain", j, ": pi"),
+    xlab = "Iteration",
+    ylab = "pi"
+  )
+
+  abline(h = 0.5, col = "red", lty = 2)
+}
+
+dev.off()
+
+```
+
+When \(\mu_1\approx-3\) and \(\mu_2\approx3\),\(\pi\) is around 0.3.
+When \(\mu_1\approx3\) and \(\mu_2\approx-3\), \(\pi\) is around 0.7. around 0.7. So that when the label switching occurs within the chain, the two traces have been exchanged their positions.
+
+### Q2:
+**Why can ordinary posterior summaries of \(\mu_1\), \(\mu_2\), and \(\pi\) be misleading when labels switch?**
+
+Because the Gibbs sampler can exchange the labels of the two components, even though the overall mixture distribution remains unchanged, ordinary posterior summaries can be misleading. When we calculate posterior means using samples from different labelling arrangements, we may average values from the lower mean and higher mean components together. As a result, the posterior means may not accurately represent the individual components.
+
+Take the two components true parameters as:
+$$
+\mu_1=-3,\qquad \mu_2=3,\qquad \pi=0.3
+$$
+This means, Component 1 has mean \(-3\) and weight 0.3.
+and Component 2 has mean \(3\) and weight 0.7.
+But the Gibbs sampler also can produce:
+$$
+\mu_1=3,\qquad \mu_2=-3,\qquad \pi=0.7
+$$
+These two sets of parameters describe exactly the same mixture distribution. Only the labels have changed.
+
+If the Gibbs sampler produces these posterior samples
+Iteration	\begin{table}[H]
+\centering
+\begin{tabular}{cccc}
+\hline
+\textbf{Iteration} & $\boldsymbol{\mu_1}$ & $\boldsymbol{\mu_2}$ & $\boldsymbol{\pi}$ \\
+\hline
+1 & -3 & 3 & 0.3 \\
+2 & -3 & 3 & 0.3 \\
+3 & 3 & -3 & 0.7 \\
+4 & 3 & -3 & 0.7 \\
+\hline
+\end{tabular}
+\end{table}
+
+Now if we calculate the posterior mean of each parameter.
+
+For \(\mu_1\):
+$$
+E(\mu_1\mid y)\approx\frac{-3-3+3+3}{4}
+$$
+$$
+E(\mu_1\mid y)\approx0
+$$
+
+For \(\mu_2\):
+$$
+E(\mu_2\mid y)\approx\frac{3+3-3-3}{4}
+$$
+$$
+E(\mu_2\mid y)\approx0
+$$
+
+For \(\pi\):
+$$
+E(\pi\mid y)\approx\frac{0.3+0.3+0.7+0.7}{4}
+$$
+$$
+\boxed{E(\pi\mid y)\approx0.5}
+$$
+
+Our posterior summaries suggest:
+$$
+\mu_1\approx0,\qquad\mu_2\approx0,\qquad\pi\approx0.5
+$$
+
+But the actual mixture contains:
+$$
+\mu_1=-3,\qquad\mu_2=3,\qquad\pi=0.3
+$$
+
+
+### Q3: 
+**Which posterior quantities remain meaningful without assigning fixed labels to the components?**
+
+1)Overall mixture mean
+$$
+E(Y)=\pi\mu_1+(1-\pi)\mu_2
+$$
+
+after switching the label
+$$
+E(Y)=(1-\pi)\mu_2+\pi\mu_1
+$$
+which is the same.
+
+2)Overall mixture variance
+
+Even we switch the labels, neither \(\pi(1-\pi)\) nor \((\mu_1-\mu_2)^2\) changes
+$$
+\operatorname{Var}(Y)=
+\sigma^2+\pi(1-\pi)(\mu_1-\mu_2)^2
+$$
+
+3)Mixture density
+
+Switching the label will not change the total density
+$$
+f(y)=\pi f_1(y)+(1-\pi)f_2(y)
+$$
+
+
+### Q4
+
+```{r T2 C2}
+
+
+all_draws <- do.call(
+  rbind,
+  lapply(chains_sep_c, function(x) {
+    x$draws[-(1:burnin), ]
+  })
+)
+
+
+# Post-process posterior samples
+ordered_draws <- data.frame(
+
+  mu_low = pmin(all_draws$mu1, all_draws$mu2),
+  mu_high = pmax(all_draws$mu1, all_draws$mu2),
+
+  pi_low = ifelse(
+    all_draws$mu1 < all_draws$mu2,
+    all_draws$pi,
+    1 - all_draws$pi
+  ),
+
+  sigma2 = all_draws$sigma2
+)
+
+#plot
+
+par(mfrow = c(2, 2))
+
+hist(
+  all_draws$mu1,
+  breaks = 50,
+  main = "Original mu1",
+  xlab = "mu1"
+)
+
+hist(
+  all_draws$mu2,
+  breaks = 50,
+  main = "Original mu2",
+  xlab = "mu2"
+)
+
+hist(
+  ordered_draws$mu_low,
+  breaks = 50,
+  main = "Lower Component Mean",
+  xlab = "mu_low"
+)
+
+hist(
+  ordered_draws$mu_high,
+  breaks = 50,
+  main = "Higher Component Mean",
+  xlab = "mu_high"
+)
+
+par(mfrow = c(1, 1))
+
+
+#Posterior means
+
+# Before post-processing
+colMeans(all_draws)
+
+# After post-processing
+colMeans(ordered_draws)
+
+
+```
+
+## Part D: Application to the Faithful Data
+
+---
+
+### 1. Data, prior and sampler runs
+
+The data are standardized, so that the prior of Part A can be used on a common scale. All results below are transformed back to minutes.
+
+```{r d-data}
+data(faithful)
+y <- faithful$eruptions
+n <- length(y)
+
+# Standardize; the original mean and sd are kept to transform results back
+y_mean <- mean(y)
+y_sd <- sd(y)
+ys <- (y - y_mean) / y_sd
+
+cat("n =", n)
+cat("Mean and sd of eruptions (minutes):", round(c(y_mean, y_sd), 3))
+```
+
+The prior is set on the standardized scale: $\mu_1, \mu_2 \sim N(0, 5^2)$, $\pi \sim \text{Beta}(1, 1)$ and $\sigma^2 \sim \text{InvGamma}(2, 1)$. These priors are weakly informative: the standardized data lie roughly between $-1.7$ and $1.4$, so $N(0, 5^2)$ for the means covers the data range several times.
+
+```{r d-prior}
+m0 <- 0
+s0 <- 5
+a <- 1
+b <- 1
+alpha0 <- 2
+beta0 <- 1
+```
+
+Four chains are run from different starting values. The starting means are placed on both sides of zero and are swapped between chains, so that the chains start in both labellings. The starting values of $\pi$ and $\sigma^2$ also differ.
+
+```{r d-run}
+n_iter <- 12000
+burnin <- 2000
+
+inits <- data.frame(
+  mu1 = c(-1, 1, -2, 2),
+  mu2 = c(1, -1, 2, -2),
+  pi = c(0.5, 0.3, 0.7, 0.5),
+  sigma2 = c(1, 0.5, 2, 1)
+)
+
+set.seed(1)
+chains <- lapply(1:4, function(j) {
+  gibbs_sampler(ys, n_iter = n_iter, m0 = m0, s0 = s0, a = a, b = b,
+                alpha0 = alpha0, beta0 = beta0,
+                mu1_init = inits$mu1[j], mu2_init = inits$mu2[j],
+                pi_init = inits$pi[j], sigma2_init = inits$sigma2[j])
+})
+```
+
+---
+
+### 2. Label switching in the output
+
+Before any post-processing, each chain is checked for label switching. A swap means that $\mu_1 > \mu_2$ at an iteration.
+
+```{r d-raw}
+raw_summary <- t(sapply(chains, function(ch) {
+  d <- ch$draws[-(1:burnin), ]
+  swap <- d$mu1 > d$mu2
+  c(mu1 = mean(d$mu1), mu2 = mean(d$mu2), pi = mean(d$pi),
+    share_mu1_above_mu2 = mean(swap),
+    label_changes = sum(diff(swap) != 0))
+}))
+rownames(raw_summary) <- paste("chain", 1:4)
+round(raw_summary, 3)
+```
+
+Within each chain the labelling never changes (0 label changes). Chains 2 and 4 are in the swapped labelling compared with chains 1 and 3 ($\mu_1 > \mu_2$ and $\pi \approx 0.64$ instead of $0.36$), because they started from swapped initial values. Both labellings describe the same mixture: means of $-1.26$ and $0.71$ on the standardized scale, with weights $0.36$ and $0.64$. Pooling the chains without relabelling would mix the two components, as discussed in Part C. Because the two groups are well separated, no chain switches labelling.
+
+The labels are arbitrary, so the draws are relabelled such that component "low" is always the one with the smaller mean. This puts all chains on the same labelling. In every iteration with $\mu_1 > \mu_2$:
+
+- the two means are swapped, so that $\mu_{\text{low}} = \mu_2$ and $\mu_{\text{high}} = \mu_1$;
+- the weight of the low component is $1-\pi$ instead of $\pi$, because $\pi$ is the weight of component 1, which is now the high component;
+- the allocations $Z_i$ are switched between 1 and 2, so that they refer to the new labels.
+
+Iterations with $\mu_1 < \mu_2$ are left unchanged. After this step, all four chains describe the same two components.
+
+```{r d-relabel}
+relabel <- function(ch, burnin) {
+  d <- ch$draws[-(1:burnin), ]
+  Z <- ch$Z[-(1:burnin), ]
+  swap <- d$mu1 > d$mu2
+  Z[swap, ] <- 3L - Z[swap, ]
+  list(
+    draws = data.frame(mu_low = pmin(d$mu1, d$mu2),
+                       mu_high = pmax(d$mu1, d$mu2),
+                       pi_low = ifelse(swap, 1 - d$pi, d$pi),
+                       sigma2 = d$sigma2),
+    # Posterior probability that observation i belongs to the high component
+    p_high = colMeans(Z == 2)
+  )
+}
+
+# Transform back to the original scale (minutes)
+to_orig <- function(d) {
+  data.frame(mu_low = d$mu_low * y_sd + y_mean,
+             mu_high = d$mu_high * y_sd + y_mean,
+             pi_low = d$pi_low,
+             sigma = sqrt(d$sigma2) * y_sd)
+}
+
+rel <- lapply(chains, relabel, burnin = burnin)
+ord <- lapply(rel, function(r) to_orig(r$draws))
+pooled <- do.call(rbind, ord)
+```
+
+---
+
+### 3. MCMC performance and posterior summaries
+
+Trace plots of the relabelled chains, original scale:
+
+```{r d-trace, fig.width = 7, fig.height = 5}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for (p in c("mu_low", "mu_high", "pi_low", "sigma")) {
+  vals <- sapply(ord, function(d) d[[p]])
+  matplot(vals, type = "l", lty = 1, col = 1:4, main = p,
+          xlab = "Iteration after burn-in", ylab = p)
+}
+```
+
+The potential scale reduction factor $\hat R$ (Gelman–Rubin, computed on the four relabelled chains) and the effective sample size (ESS, summed over the chains, from the autocorrelation of each chain truncated at the first negative value) are computed directly.
+
+```{r d-diag}
+rhat <- function(x) {
+  # x: matrix with one column per chain
+  m <- ncol(x)
+  k <- nrow(x)
+  W <- mean(apply(x, 2, var))
+  B <- k * var(colMeans(x))
+  sqrt(((k - 1) / k * W + B / k) / W)
+}
+
+ess <- function(x) {
+  k <- length(x)
+  rho <- acf(x, lag.max = 1000, plot = FALSE)$acf[-1]
+  cut <- which(rho < 0)[1] - 1
+  if (is.na(cut)) cut <- length(rho)
+  k / (1 + 2 * sum(rho[seq_len(cut)]))
+}
+
+pars <- c("mu_low", "mu_high", "pi_low", "sigma")
+summ <- t(sapply(pars, function(p) {
+  x <- sapply(ord, function(d) d[[p]])
+  c(mean = mean(x), sd = sd(x),
+    q2.5 = unname(quantile(x, 0.025)), q97.5 = unname(quantile(x, 0.975)),
+    Rhat = rhat(x), ESS = sum(apply(x, 2, ess)))
+}))
+summ_out <- round(summ, 3)
+summ_out[, "ESS"] <- round(summ[, "ESS"])
+knitr::kable(summ_out)
+```
+
+The relabelled chains agree closely, and the traces overlap without any drift. $\hat R$ is 1.00 for all four parameters. The effective sample sizes are above 36,000 out of 40,000 stored draws, so the draws are almost uncorrelated.
+
+The table also gives the posterior means, standard deviations and 95% credible intervals of the relabelled parameters, in minutes. Component "low" has the smaller mean, "high" the larger one, and $\sigma$ is the common standard deviation of the two components. The lower component has mean 2.05 minutes (95% interval [1.97, 2.12]) and weight 0.36 ([0.305, 0.419]). The upper component has mean 4.30 minutes ([4.24, 4.35]) and weight 0.64. The common standard deviation is 0.38 minutes ([0.35, 0.41]).
+
+---
+
+### 4. Fitted mixture compared with the data
+
+The fitted density is computed for every (thinned) posterior draw as $\pi f_{\text{low}} + (1-\pi) f_{\text{high}}$. This density does not depend on the labelling. The plot shows its posterior mean with pointwise 95% bands, together with the histogram and a kernel density estimate of the data.
+
+```{r d-density, fig.width = 7, fig.height = 4.5}
+grid <- seq(1, 6, length.out = 300)
+idx <- seq(1, nrow(pooled), by = 20)
+
+dens <- sapply(idx, function(t) {
+  pooled$pi_low[t] * dnorm(grid, pooled$mu_low[t], pooled$sigma[t]) +
+    (1 - pooled$pi_low[t]) * dnorm(grid, pooled$mu_high[t], pooled$sigma[t])
+})
+dens_mean <- rowMeans(dens)
+dens_lo <- apply(dens, 1, quantile, probs = 0.025)
+dens_hi <- apply(dens, 1, quantile, probs = 0.975)
+
+plot_fit <- function() {
+  hist(y, breaks = 30, probability = TRUE, col = "gray90", border = "white",
+       main = "Old Faithful eruption durations", xlab = "Eruption duration (minutes)")
+  lines(density(y), col = "red", lwd = 2)
+  lines(grid, dens_mean, col = "blue", lwd = 2)
+  lines(grid, dens_lo, col = "blue", lty = 2)
+  lines(grid, dens_hi, col = "blue", lty = 2)
+
+  legend("top",
+         c("kernel density", "posterior mean mixture", "95% band"),
+         col = c("red", "blue", "blue"), lty = c(1, 1, 2),
+         lwd = c(2, 2, 1), bg = "white", cex = 0.8)
+}
+
+plot_fit()                                           
+
+pdf("faithful_fit.pdf", width = 7, height = 4.5)      # saved as pdf
+plot_fit()
+dev.off()
+```
+
+The posterior mean mixture has its two peaks at about 2.0 and 4.3 minutes, in line with the two modes of the histogram, and the density between them is close to zero. The kernel density estimate has lower peaks and a higher valley than the fitted mixture. The 95% band is narrow, but it only reflects the uncertainty in the parameters, not how well the model fits. The fit is not perfect: the highest histogram bar of the short eruptions (near 1.8 minutes) is well above the fitted density, the mixture puts some density below the shortest observed duration (about 1.6 minutes), and it lies below the histogram on the left side of the long group, between about 3.3 and 3.6 minutes.
+
+---
+
+### 5. Uncertainty about the allocation
+
+The posterior probability that observation $i$ belongs to the high component is the share of draws that allocate it to that component, after relabelling.
+
+```{r d-alloc, fig.width = 7, fig.height = 3.5}
+p_high <- rowMeans(sapply(rel, function(r) r$p_high))
+
+plot_alloc <- function() {
+  par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+  hist(p_high, breaks = 20, main = "P(high component)", xlab = "posterior probability")
+  plot(y, p_high, pch = 16, cex = 0.5, xlab = "Eruption duration (minutes)",
+       ylab = "P(high component)")
+  abline(h = 0.5, lty = 2)
+  par(mfrow = c(1, 1))
+}
+
+plot_alloc()                                          
+
+pdf("allocation.pdf", width = 7, height = 3.5)         # saved as pdf
+plot_alloc()
+dev.off()
+
+cat("Observations with P(high) > 0.5:", sum(p_high > 0.5))
+cat("Observations with 0.05 < P(high) < 0.95:", sum(p_high > 0.05 & p_high < 0.95))
+cat("Range of eruption durations with 0.05 < P(high) < 0.95:",
+    round(range(y[p_high > 0.05 & p_high < 0.95]), 2))
+```
+
+174 of the 272 observations have a posterior probability above 0.5 of belonging to the upper component, which agrees with the estimated weight of 0.64. Only 2 observations have a probability between 0.05 and 0.95 (the two thresholds are an arbitrary choice). Their durations are 3.07 and 3.32 minutes, in the gap between the two groups. The uncertainty about the allocation is therefore limited to the boundary between the components.
+
+---
+
+### 6. Is the two-component Gaussian mixture adequate?
+
+A posterior predictive check is used. Data sets of the same size are simulated from the fitted model (parameters drawn from the posterior, then allocations and observations simulated), and the sample skewness and excess kurtosis are compared with the observed values. The posterior predictive p-value is the share of replicated values at least as large as the observed one.
+
+```{r d-ppc, fig.width = 7, fig.height = 4}
+rep_data <- function(t) {
+  z <- runif(n) < pooled$pi_low[t]
+  rnorm(n, ifelse(z, pooled$mu_low[t], pooled$mu_high[t]), pooled$sigma[t])
+}
+skew <- function(x) mean((x - mean(x))^3) / sd(x)^3
+kurt <- function(x) mean((x - mean(x))^4) / sd(x)^4 - 3
+
+set.seed(1)
+rep_idx <- sample(nrow(pooled), 500)
+stat_rep <- t(sapply(rep_idx, function(t) {
+  yr <- rep_data(t)
+  c(skew = skew(yr), kurt = kurt(yr))
+}))
+stat_obs <- c(skew = skew(y), kurt = kurt(y))
+
+ppp <- colMeans(sweep(stat_rep, 2, stat_obs, ">="))
+round(rbind(observed = stat_obs, ppp = ppp), 3)
+
+# Density of the data against densities of a few replicated data sets
+plot(density(y), lwd = 2, main = "Observed and replicated data",
+     xlab = "Eruption duration (minutes)",
+     ylim = c(0, 0.75))
+for (t in rep_idx[1:20]) lines(density(rep_data(t)), col = "gray")
+lines(density(y), lwd = 2)
+```
+
+The observed skewness ($-0.41$) and excess kurtosis ($-1.51$) are not extreme under the fitted model: the posterior predictive p-values are 0.32 and 0.87. The kurtosis of the data is in the lower part of the replicated values, so the replicated data have somewhat heavier tails. The plot of the replicated densities shows the same pattern. The two modes and the gap between them are reproduced, but the observed density is higher than all 20 replicated densities at the peak of the short eruptions, and the replicates have more mass below 1.5 minutes. These two statistics are only a rough check.
+
+---
+
+### 7. Interpretation of the components
+
+The lower component has mean 2.05 minutes and weight 0.36, and the upper component has mean 4.30 minutes and weight 0.64, with a common standard deviation of 0.38 minutes. Chains 2 and 4 were in the swapped labelling, so these values are reported after relabelling the draws. Only 2 of the 272 observations have an uncertain allocation. The mixture is a useful description of the shape of the distribution, but this does not show that the eruptions come from two physically distinct populations.
