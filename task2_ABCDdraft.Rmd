@@ -1063,7 +1063,9 @@ print(rhat_table)
 pdf("Autocorrelation.pdf", width = 8, height = 6)
 
 # Autocorrelation - Clearly separated mixture
-par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+par(mfrow = c(2, 2),
+    mar = c(4.5, 4.5, 3, 1),
+    oma = c(1, 1, 1, 1))
 
 acf(sep_ordered[[1]]$mu1, main = "Separated: mu1")
 acf(sep_ordered[[1]]$mu2, main = "Separated: mu2")
@@ -1073,7 +1075,9 @@ acf(sep_ordered[[1]]$sigma2, main = "Separated: sigma2")
 
 
 # Autocorrelation - Overlapping mixture
-par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+par(mfrow = c(2, 2),
+    mar = c(4.5, 4.5, 3, 1),
+    oma = c(1, 1, 1, 1))
 
 acf(overlap_ordered[[1]]$mu1, main = "Overlapping: mu1")
 acf(overlap_ordered[[1]]$mu2, main = "Overlapping: mu2")
