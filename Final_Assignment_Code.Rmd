@@ -1,6 +1,6 @@
 ---
 title: "Computational Statistics: Final Assignment (Group C)"
-author: "Zhuoyan Jiang, Kalpa Rashmikah, Elsa Mattila"
+author: "Zhuoyan Jiang, Kalpa Korottage Don, Elsa Mattila"
 date: "2026-10-24"
 output:
   html_document:
@@ -760,15 +760,6 @@ The average maximum deviation of the contemporaneous correlation matrix is 0.076
 
 ## Part C: The ladle quantities
 
-Implement the quantities $f$ , $g$, and $\varphi$ used in the ladle estimator as defined in the paper.
-
-Your report should explain what information is represented by the eigenvalue-based part and
-by the bootstrap-variability part of the criterion, and how these quantities are combined to
-estimate the dimension.
-
-Check your implementation carefully on simulated data. Intermediate computational checks
-should be described where they help establish that the implementation is correct.
-
 ### Answer:
 
 The function $f_0(k)$ is defined for $k=1,\dots,p-1$ as $\frac{1}{n}\sum_{j=1}^n(1-|\text{det}(\hat{B}_k^T B_{k,j}^*)|)$, where $\hat{B}_k^T$ are the first $k$ columns of the joint diagonaliser computed from the original sample and $B_{k,j}^*$ are the first $k$ columns of the joint diagonaliser computed from the $j$th bootstrap sample, and $f_0(0)=0$. The function $f(k)$ is then extracted from $f_0(k)$ by normalising in the following way: $f(k)=f_0(k)/1+(\sum_{l=0}^{p-1}f_0(l))$.
@@ -777,11 +768,9 @@ The function $\varphi(k)$ is defined with the diagonal elements of $\Lambda$, $\
 
 After obtaining $f$ and $\varphi$, obtaining the ladle function $g$ is easy. The ladle function is defined as $g(k) = f(k) + \varphi(k)$. The ladle estimator for the dimension will be $\hat{q} = \argmin \{g(q)\}$.
 
-In the ladle function $g$, the information represented by the bootstrap-variability is found in the normalised variance function $f$. This is quite obvious, because it is the only quantity in $g$ that contains components stemming from bootstrapping. The variance function $f_0$ is a way of finding out the average variance of the space, which is spanned by the first $k$ vectors. The information represented by the eigenvalues is found mainly in $\varphi$, but also in $f$. The function $\varphi$ is essentially a scree plot, which contains the eigenvalues of the sample covariance matrix of the centred and whitened data calculated with either AMUSE or SOBI.
-
+In the ladle function $g$, the information represented by the bootstrap-variability is found in the normalised variance function $f$. This is quite obvious, because it is the only quantity in $g$ that contains components stemming from bootstrapping. The variance function $f_0$ is a way of finding out the average variance of the space, which is spanned by the first $k$ vectors. The information represented by the eigenvalues is found mainly in $\varphi$, but also in $f$. The function $\varphi$ is essentially a scree plot, which contains the diagonal elements of the matrix $\varLambda$ calculated with either AMUSE or SOBI. These values are seen as eigenvalues.
 
 Here we define the function ladle, which computes the ladle quantities $f$, $\varphi$ and $g$.
-
 ```{r}
 ladle <- function(data, j, method, tuning, fit) {
   # Calculate f
@@ -869,7 +858,6 @@ ladle <- function(data, j, method, tuning, fit) {
 ```
 
 Simulate data to test the function.
-
 ```{r}
 A <- matrix(c(0.8, 0.3, 0, 0.5), 2)
 set.seed(7)
@@ -879,7 +867,6 @@ sim_data <- cbind(sim_X, sim_noise)
 ```
 
 Use the simulated data with two noise components to test the custom ladle function
-
 ```{r}
 set.seed(8)
 t_ladle1 <- ladle(sim_data, 200, "stationary", 1/40, "sobi")
@@ -893,7 +880,6 @@ t_ladle8 <- ladle(sim_data, 200, "fixed", 60, "amuse")
 ```
 
 Plot the results
-
 ```{r}
 plot(t_ladle1$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
@@ -940,25 +926,8 @@ lines(t_ladle8$g, col = "purple")
 All of the ladle estimators agree on that the signal dimension is 2, which is the result we hoped for.
 
 ## Part D: Simulation study
-Use the simulation setting specified as Setting 1 in the paper to investigate the behaviour of
-your implementation.
-
-You are not required to reproduce every numerical result or figure in the paper. Instead,
-reproduce the main qualitative behaviour of the estimator under Setting 1 and use the
-simulation to demonstrate that your implementation works as intended.
-
-Compare the fixed-block and stationary bootstrap approaches. Choose reasonable block-length
-settings and justify the choices. Investigate whether the estimated dimension is sensitive to
-the bootstrap method, block length, or sample size.
-
-Your simulation study should contain enough independent repetitions to support the conclu-
-sions, but computational effort should be used sensibly. Report Monte Carlo results in a way
-that makes the uncertainty and variability of the simulation visible.
 
 ### Answer:
-
-"Throughout the simulations we considered model (1) with p = 10 and q = 5 where the five signal components are ARMA(0.6; (0, -0.4)), ARMA((0.4, 0.1, 0.3); (0.2, 0.4)), AR(0.4), MA(0.5, 0.3, 0.1,
-0.2) and AR(0.1, 0.1, 0.3), all having Gaussian innovations. In Setting 1 the five noise components are all Gaussian white noise."
 
 The simulation study will be done by using the same signal generation process as in Nordhausen & Virta, 2018. For process length, $T = 200, 500, 1000, 2000$ were considered. 10 bootstrap samples were used.
 
@@ -1045,424 +1014,568 @@ sim <- cbind(signal, noise)
 
 Plot the signals
 ```{r}
-plot.ts(sim[,1])
-plot.ts(sim[,2])
-plot.ts(sim[,3])
-plot.ts(sim[,4])
-plot.ts(sim[,5])
-plot.ts(sim[,6])
-plot.ts(sim[,7])
-plot.ts(sim[,8])
-plot.ts(sim[,9])
-plot.ts(sim[,10])
+plot.ts(sim, ylab = 1, main = "", cex.lab = 0.7)
 ```
 
 Check the autocorrelation for the simulated time series
 ```{r}
-acf(sim)
+acf(sim[,1], main = "ARMA(0.6; (0, -0.4))")
+acf(sim[,2], main = "ARMA((0.4, 0.1, 0.3); (0.2, 0.4))")
+acf(sim[,3], main = "AR(0.4)")
+acf(sim[,4], main = "MA(0.5, 0.3, 0.1, 0.2)")
+acf(sim[,5], main = "AR(0.1, 0.1, 0.3)")
+acf(sim[,6], main = "Noise 1")
+acf(sim[,7], main = "Noise 2")
+acf(sim[,8], main = "Noise 3")
+acf(sim[,9], main = "Noise 4")
+acf(sim[,10], main = "Noise 5")
+```
+Save the time series plot as a pdf file
+```{r}
+pdf("Simulation.pdf", width = 12, height = 5)
+plot.ts(sim, ylab = 1, main = "", cex.lab = 0.7)
 ```
 
+Save the autocorrelation plots as a pdf file
+```{r}
+titles <- c("ARMA(0.6; (0, -0.4))", "ARMA((0.4, 0.1, 0.3); (0.2, 0.4))", "AR(0.4)", "MA(0.5, 0.3, 0.1, 0.2)", "AR(0.1, 0.1, 0.3)", "Noise 1", "Noise 2", "Noise 3", "Noise 4", "Noise 5")
+
+pdf("Autocorrelation sim.pdf", width = 7, height = 9.33)
+layout(matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), 5, 2, byrow = FALSE))
+
+par(mar = c(2.1, 4.1, 2.1, 1.1))
+
+for(k in 1:10){
+  acf(sim[,k], main = "")
+  title(titles[k], line = 0.5, cex.main = 1)
+}
+```
 
 ### Simulation for stationary block bootstrap with SOBI
-```{r, eval=FALSE}
+```{r}
 sims <- 500
 min200_stationary_sobi_20 <- numeric(sims)
-
+g200_stationary_sobi_20 <- list(NA)
 
 min500_stationary_sobi_20 <- numeric(sims)
-
+g500_stationary_sobi_20 <- list(NA)
 
 min1000_stationary_sobi_20 <- numeric(sims)
-
+g1000_stationary_sobi_20 <- list(NA)
 
 min2000_stationary_sobi_20 <- numeric(sims)
+g2000_stationary_sobi_20 <- list(NA)
 
-
+start_stationary_sobi_20 <- Sys.time()
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/20, "sobi")
   min200_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+  g200_stationary_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/20, "sobi")
   min500_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+  g500_stationary_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/20, "sobi")
   min1000_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+  g1000_stationary_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(108)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/20, "sobi")
   min2000_stationary_sobi_20[i] <- which.min(ladle_estimates$g)
+  g2000_stationary_sobi_20[[i]] <- ladle_estimates$g
 }
+end_stationary_sobi_20 <- Sys.time()
 ```
 
-```{r, eval=FALSE}
-table(min200_stationary_sobi_20-1)
-table(min500_stationary_sobi_20-1)
-table(min1000_stationary_sobi_20-1)
-table(min2000_stationary_sobi_20-1)
-```
-
-```{r, eval=FALSE}
+```{r}
 sims <- 500
 min200_stationary_sobi_40 <- numeric(sims)
-
+g200_stationary_sobi_40 <- list(NA)
 
 min500_stationary_sobi_40 <- numeric(sims)
-
+g500_stationary_sobi_40 <- list(NA)
 
 min1000_stationary_sobi_40 <- numeric(sims)
-
+g1000_stationary_sobi_40 <- list(NA)
 
 min2000_stationary_sobi_40 <- numeric(sims)
+g2000_stationary_sobi_40 <- list(NA)
 
-
+start_stationary_sobi_40 <- Sys.time()
 set.seed(105)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/40, "sobi")
   min200_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+  g200_stationary_sobi_40[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/40, "sobi")
   min500_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+  g500_stationary_sobi_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/40, "sobi")
   min1000_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+  g1000_stationary_sobi_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/40, "sobi")
   min2000_stationary_sobi_40[i] <- which.min(ladle_estimates$g)
+  g2000_stationary_sobi_40[[i]] <- ladle_estimates$g
 }
+end_stationary_sobi_40 <- Sys.time()
 ```
-
-```{r, eval=FALSE}
-table(min200_stationary_sobi_40-1)
-table(min500_stationary_sobi_40-1)
-table(min1000_stationary_sobi_40-1)
-table(min2000_stationary_sobi_40-1)
-```
-
 
 ### Simulation for stationary block bootstrap with AMUSE
 ```{r}
 sims <- 500
 min200_stationary_amuse_20 <- numeric(sims)
-
+g200_stationary_amuse_20 <- list(NA)
 
 min500_stationary_amuse_20 <- numeric(sims)
-
+g500_stationary_amuse_20 <- list(NA)
 
 min1000_stationary_amuse_20 <- numeric(sims)
-
+g1000_stationary_amuse_20 <- list(NA)
 
 min2000_stationary_amuse_20 <- numeric(sims)
+g2000_stationary_amuse_20 <- list(NA)
 
-
+start_stationary_amuse_20 <- Sys.time()
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/20, "amuse")
   min200_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+  g200_stationary_amuse_20[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/20, "amuse")
   min500_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+  g500_stationary_amuse_20[[i]] <- ladle_estimates$g
 }
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/20, "amuse")
   min1000_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+  g1000_stationary_amuse_20[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/20, "amuse")
   min2000_stationary_amuse_20[i] <- which.min(ladle_estimates$g)
+  g2000_stationary_amuse_20[[i]] <- ladle_estimates$g
 }
-```
-
-```{r}
-table(min200_stationary_amuse_20)
-table(min500_stationary_amuse_20)
-table(min1000_stationary_amuse_20)
-table(min2000_stationary_amuse_20)
+end_stationary_amuse_20 <- Sys.time()
 ```
 
 ```{r}
 sims <- 500
 min200_stationary_amuse_40 <- numeric(sims)
-
+g200_stationary_amuse_40 <- list(NA)
 
 min500_stationary_amuse_40 <- numeric(sims)
-
+g500_stationary_amuse_40 <- list(NA)
 
 min1000_stationary_amuse_40 <- numeric(sims)
-
+g1000_stationary_amuse_40 <- list(NA)
 
 min2000_stationary_amuse_40 <- numeric(sims)
+g2000_stationary_amuse_40 <- list(NA)
 
-
+start_stationary_amuse_40 <- Sys.time()
 set.seed(105)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "stationary", 1/40, "amuse")
   min200_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+  g200_stationary_amuse_40[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "stationary", 1/40, "amuse")
   min500_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+  g500_stationary_amuse_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "stationary", 1/40, "amuse")
   min1000_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+  g1000_stationary_amuse_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "stationary", 1/40, "amuse")
   min2000_stationary_amuse_40[i] <- which.min(ladle_estimates$g)
+  g2000_stationary_amuse_40[[i]] <- ladle_estimates$g
 }
-```
-
-```{r}
-table(min200_stationary_amuse_40-1)
-table(min500_stationary_amuse_40-1)
-table(min1000_stationary_amuse_40-1)
-table(min2000_stationary_amuse_40-1)
+end_stationary_amuse_40 <- Sys.time()
 ```
 
 ### Simulation for fixed block bootstrap with SOBI
-```{r, eval=FALSE}
+```{r}
 sims <- 500
 min200_fixed_sobi_20 <- numeric(sims)
-
+g200_fixed_sobi_20 <- list(NA)
 
 min500_fixed_sobi_20 <- numeric(sims)
-
+g500_fixed_sobi_20 <- list(NA)
 
 min1000_fixed_sobi_20 <- numeric(sims)
-
+g1000_fixed_sobi_20 <- list(NA)
 
 min2000_fixed_sobi_20 <- numeric(sims)
+g2000_fixed_sobi_20 <- list(NA)
 
-
+start_fixed_sobi_20 <- Sys.time()
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 20, "sobi")
   min200_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+  g200_fixed_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 20, "sobi")
   min500_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+  g500_fixed_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 20, "sobi")
   min1000_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+  g1000_fixed_sobi_20[[i]] <- ladle_estimates$g
 }
 set.seed(108)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 20, "sobi")
   min2000_fixed_sobi_20[i] <- which.min(ladle_estimates$g)
+  g2000_fixed_sobi_20[[i]] <- ladle_estimates$g
 }
+end_fixed_sobi_20 <- Sys.time()
 ```
 
-```{r, eval=FALSE}
-table(min200_fixed_sobi_20-1)
-table(min500_fixed_sobi_20-1)
-table(min1000_fixed_sobi_20-1)
-table(min2000_fixed_sobi_20-1)
-```
-
-```{r, eval=FALSE}
+```{r}
 sims <- 500
 min200_fixed_sobi_40 <- numeric(sims)
-
+g200_fixed_sobi_40 <- list(NA)
 
 min500_fixed_sobi_40 <- numeric(sims)
-
+g500_fixed_sobi_40 <- list(NA)
 
 min1000_fixed_sobi_40 <- numeric(sims)
-
+g1000_fixed_sobi_40 <- list(NA)
 
 min2000_fixed_sobi_40 <- numeric(sims)
+g2000_fixed_sobi_40 <- list(NA)
 
-
+start_fixed_sobi_40 <- Sys.time()
 set.seed(105)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 40, "sobi")
   min200_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
-  print(i)
+  g200_fixed_sobi_40[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 40, "sobi")
   min500_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
-  print(i)
+  g500_fixed_sobi_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 40, "sobi")
   min1000_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
-  print(i)
+  g1000_fixed_sobi_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 40, "sobi")
   min2000_fixed_sobi_40[i] <- which.min(ladle_estimates$g)
-  print(i)
+  g2000_fixed_sobi_40[[i]] <- ladle_estimates$g
 }
-```
-
-```{r, eval=FALSE}
-table(min200_fixed_sobi_40-1)
-table(min500_fixed_sobi_40-1)
-table(min1000_fixed_sobi_40-1)
-table(min2000_fixed_sobi_40-1)
+end_fixed_sobi_40 <- Sys.time()
 ```
 
 ### Simulation for fixed block bootstrap with AMUSE
 ```{r}
 sims <- 500
 min200_fixed_amuse_20 <- numeric(sims)
-
+g200_fixed_amuse_20 <- list(NA)
 
 min500_fixed_amuse_20 <- numeric(sims)
-
+g500_fixed_amuse_20 <- list(NA)
 
 min1000_fixed_amuse_20 <- numeric(sims)
-
+g1000_fixed_amuse_20 <- list(NA)
 
 min2000_fixed_amuse_20 <- numeric(sims)
+g2000_fixed_amuse_20 <- list(NA)
 
-
+start_fixed_amuse_20 <- Sys.time()
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 20, "amuse")
   min200_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+  g200_fixed_amuse_20[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 20, "amuse")
   min500_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+  g500_fixed_amuse_20[[i]] <- ladle_estimates$g
 }
 set.seed(107)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 20, "amuse")
   min1000_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+  g1000_fixed_amuse_20[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 20, "amuse")
   min2000_fixed_amuse_20[i] <- which.min(ladle_estimates$g)
+  g2000_fixed_amuse_20[[i]] <- ladle_estimates$g
 }
-```
-
-```{r}
-table(min200_fixed_amuse_20-1)
-table(min500_fixed_amuse_20-1)
-table(min1000_fixed_amuse_20-1)
-table(min2000_fixed_amuse_20-1)
+end_fixed_amuse_20 <- Sys.time()
 ```
 
 ```{r}
 sims <- 500
 min200_fixed_amuse_40 <- numeric(sims)
-
+g200_fixed_amuse_40 <- list(NA)
 
 min500_fixed_amuse_40 <- numeric(sims)
-
+g500_fixed_amuse_40 <- list(NA)
 
 min1000_fixed_amuse_40 <- numeric(sims)
+g1000_fixed_amuse_40 <- list(NA)
 
 min2000_fixed_amuse_40 <- numeric(sims)
+g2000_fixed_amuse_40 <- list(NA)
 
-
+start_fixed_amuse_40 <- Sys.time()
 set.seed(105)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:200,], 10, "fixed", 40, "amuse")
   min200_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+  g200_fixed_amuse_40[[i]] <- ladle_estimates$g
 }
 set.seed(106)
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:500,], 10, "fixed", 40, "amuse")
   min500_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+  g500_fixed_amuse_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:1000,], 10, "fixed", 40, "amuse")
   min1000_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+  g1000_fixed_amuse_40[[i]] <- ladle_estimates$g
 }
 
 for (i in 1:sims) {
   ladle_estimates <- ladle(sim[1:2000,], 10, "fixed", 40, "amuse")
   min2000_fixed_amuse_40[i] <- which.min(ladle_estimates$g)
+  g2000_fixed_amuse_40[[i]] <- ladle_estimates$g
+}
+end_fixed_amuse_40 <- Sys.time()
+```
+Calculate the computation times for each method and the total amount of time used
+```{r}
+data.frame(SOBI_S_20 = end_stationary_sobi_20 - start_stationary_sobi_20,
+           SOBI_S_40 = end_stationary_sobi_40 - start_stationary_sobi_40,
+           SOBI_F_20 = end_fixed_sobi_20 - start_fixed_sobi_20,
+           SOBI_F_40 = end_fixed_sobi_40 - start_fixed_sobi_40,
+           AMUSE_S_20 = end_stationary_amuse_20 - start_stationary_amuse_20,
+           AMUSE_S_40 = end_stationary_amuse_40 - start_stationary_amuse_40,
+           AMUSE_F_20 = end_fixed_amuse_20 - start_fixed_amuse_20,
+           AMUSE_F_40 = end_fixed_amuse_40 - start_fixed_amuse_40,
+           total_time = end_stationary_sobi_20 - start_stationary_sobi_20 + end_stationary_sobi_40 - start_stationary_sobi_40 + end_fixed_sobi_20 - start_fixed_sobi_20 + end_fixed_sobi_40 - start_fixed_sobi_40 + end_stationary_amuse_20 - start_stationary_amuse_20 + end_stationary_amuse_40 - start_stationary_amuse_40 + end_fixed_amuse_20 - start_fixed_amuse_20 +  end_fixed_amuse_40 - start_fixed_amuse_40)
+```
+
+Function that preps the variables with the minimums for plotting
+```{r}
+barplot_prep <- function(data, dimension) {
+  x <- numeric(dimension)
+  for (i in 1:dimension) {
+    x[i] <- sum(data-1 == i)
+  }
+  return(matrix(x, nrow = dimension))
 }
 ```
+Barplots will be used to visualise the proportions of estimated signal dimensions for each method and signal length.
 
+Save the barplots of the minimums as a pdf file or plot them
 ```{r}
-table(min200_fixed_amuse_40-1)
-table(min500_fixed_amuse_40-1)
-table(min1000_fixed_amuse_40-1)
-table(min2000_fixed_amuse_40-1)
+#pdf("Simulated ladle estimates.pdf", width = 7, height = 7)
+par(mar=c(2.1, 4.1, 1.3, 1.1), mfrow = c(2, 2))
+colour <- c("darkgreen", "darkcyan","deepskyblue2", "azure4", "grey85", "azure4", "deepskyblue2", "darkcyan", "darkgreen")
+
+barplot(matrix(c(barplot_prep(min200_stationary_sobi_20, 10),
+barplot_prep(min200_stationary_sobi_40, 10),
+barplot_prep(min200_fixed_sobi_20, 10),
+barplot_prep(min200_fixed_sobi_40, 10),
+barplot_prep(min200_stationary_amuse_20, 10),
+barplot_prep(min200_stationary_amuse_40, 10),
+barplot_prep(min200_fixed_amuse_20, 10),
+barplot_prep(min200_fixed_amuse_40, 10)), nrow = 10) , col = colour, names.arg = c("SOBI_S_20", "SOBI_S_40", "SOBI_F_20", "SOBI_F_40", "AMUSE_S_20", "AMUSE_S_40", "AMUSE_F_20", "AMUSE_F_40"), horiz = T, las = 1, cex.names = 0.55, main = "T=200")
+
+barplot(matrix(c(barplot_prep(min500_stationary_sobi_20, 10),
+barplot_prep(min500_stationary_sobi_40, 10),
+barplot_prep(min500_fixed_sobi_20, 10),
+barplot_prep(min500_fixed_sobi_40, 10),
+barplot_prep(min500_stationary_amuse_20, 10),
+barplot_prep(min500_stationary_amuse_40, 10),
+barplot_prep(min500_fixed_amuse_20, 10),
+barplot_prep(min500_fixed_amuse_40, 10)), nrow = 10) , col = colour, horiz = T, las = 1, cex.names = 0.55, main = "T=500")
+
+barplot(matrix(c(barplot_prep(min1000_stationary_sobi_20, 10),
+barplot_prep(min1000_stationary_sobi_40, 10),
+barplot_prep(min1000_fixed_sobi_20, 10),
+barplot_prep(min1000_fixed_sobi_40, 10),
+barplot_prep(min1000_stationary_amuse_20, 10),
+barplot_prep(min1000_stationary_amuse_40, 10),
+barplot_prep(min1000_fixed_amuse_20, 10),
+barplot_prep(min1000_fixed_amuse_40, 10)), nrow = 10) , col = colour, names.arg = c("SOBI_S_20", "SOBI_S_40", "SOBI_F_20", "SOBI_F_40", "AMUSE_S_20", "AMUSE_S_40", "AMUSE_F_20", "AMUSE_F_40"), horiz = T, las = 1, cex.names = 0.55, main = "T=1000")
+
+par(mar=c(2.1, 4.1, 1.1, 1.1), xpd = TRUE)
+barplot(matrix(c(barplot_prep(min2000_stationary_sobi_20, 10),
+barplot_prep(min2000_stationary_sobi_40, 10),
+barplot_prep(min2000_fixed_sobi_20, 10),
+barplot_prep(min2000_fixed_sobi_40, 10),
+barplot_prep(min2000_stationary_amuse_20, 10),
+barplot_prep(min2000_stationary_amuse_40, 10),
+barplot_prep(min2000_fixed_amuse_20, 10),
+barplot_prep(min2000_fixed_amuse_40, 10)), nrow = 10) , col = colour, horiz = T, las = 1, cex.names = 0.55, main = "T=2000")
+
+legend("topleft", inset = c(-0.2,0.0), c("1", "2", "3", "4", "5", "6", "7", "8", "9"), cex = 1, fill = colour)
 ```
 
+Calculate Monte Carlo variability
+
+Start by converting all lists into matrices to prep for plotting
+```{r}
+g200_stationary_sobi_20_mat <- do.call(rbind, g200_stationary_sobi_20)
+g500_stationary_sobi_20_mat <- do.call(rbind, g500_stationary_sobi_20)
+g1000_stationary_sobi_20_mat <- do.call(rbind, g1000_stationary_sobi_20)
+g2000_stationary_sobi_20_mat <- do.call(rbind, g2000_stationary_sobi_20)
+```
+
+Save the boxplots of the row means of the ladle function for each setting as a pdf file or plot them
+```{r}
+#pdf("mc variability.pdf", width = 7, height = 7)
+par(mfrow = c(3, 3), mar = c(3, 3, 2, 1) + 0.1)
+boxplot(rowMeans(g200_stationary_sobi_20_mat), rowMeans(g500_stationary_sobi_20_mat), rowMeans(g1000_stationary_sobi_20_mat), rowMeans(g2000_stationary_sobi_20_mat), names = c("200", "500", "1000", "2000"), main = "S_S_20")
+boxplot(rowMeans(g200_stationary_sobi_40_mat), rowMeans(g500_stationary_sobi_40_mat), rowMeans(g1000_stationary_sobi_40_mat), rowMeans(g2000_stationary_sobi_40_mat), names = c("200", "500", "1000", "2000"), main = "S_S_40")
+
+boxplot(rowMeans(g200_stationary_amuse_20_mat), rowMeans(g500_stationary_amuse_20_mat), rowMeans(g1000_stationary_amuse_20_mat), rowMeans(g2000_stationary_amuse_20_mat), names = c("200", "500", "1000", "2000"), main = "A_S_20")
+boxplot(rowMeans(g200_stationary_amuse_40_mat), rowMeans(g500_stationary_amuse_40_mat), rowMeans(g1000_stationary_amuse_40_mat), rowMeans(g2000_stationary_amuse_40_mat), names = c("200", "500", "1000", "2000"), main = "A_S_40")
+
+boxplot(rowMeans(g200_fixed_sobi_20_mat), rowMeans(g500_fixed_sobi_20_mat), rowMeans(g1000_fixed_sobi_20_mat), rowMeans(g2000_fixed_sobi_20_mat), names = c("200", "500", "1000", "2000"), main = "S_F_20")
+boxplot(rowMeans(g200_fixed_sobi_40_mat), rowMeans(g500_fixed_sobi_40_mat), rowMeans(g1000_fixed_sobi_40_mat), rowMeans(g2000_fixed_sobi_40_mat), names = c("200", "500", "1000", "2000"), main = "S_F_40")
+
+boxplot(rowMeans(g200_fixed_amuse_20_mat), rowMeans(g500_fixed_amuse_20_mat), rowMeans(g1000_fixed_amuse_20_mat), rowMeans(g2000_fixed_amuse_20_mat), names = c("200", "500", "1000", "2000"), main = "A_F_20")
+boxplot(rowMeans(g200_fixed_amuse_40_mat), rowMeans(g500_fixed_amuse_40_mat), rowMeans(g1000_fixed_amuse_40_mat), rowMeans(g2000_fixed_amuse_40_mat), names = c("200", "500", "1000", "2000"), main = "A_F_40")
+```
+
+
 ## Part E: Application to the course data
-
-Apply the methods to the time-series data set provided for the assignment in Moodle.
-Use both the fixed-block and stationary bootstrap versions of the ladle estimator. Select and
-justify the block-length choices used in the final analysis.
-
-Your analysis should include:
-
-• the estimated signal dimension and the evidence supporting it;
-
-• an appropriate visualization of the ladle criterion and its components;
-
-• a comparison of the results obtained with the two bootstrap methods;
-
-• a sensitivity analysis for the block-length choice;
-
-• a discussion of what the results imply for the structure of the observed multivariate
-time series.
-
-If the two bootstrap approaches or different reasonable block lengths lead to different conclu-
-sions, this should be investigated and discussed rather than hidden by reporting only one
-result.
 
 ### Answer:
 
 The previous part indicates that using SOBI for diagonalisation gives the most accurate results. For bigger block sizes there is almost no difference between fixed block bootstrap and stationary block bootstrap. The fixed block bootstrap method is faster, based on how long the simulations took.
 
-```{r, eval=FALSE}
+Calculate the ladle quantities for timeseries.dat for four different settings
+```{r}
 set.seed(456)
-ts_ladle <- ladle(ts_data, 500, "fixed", 40, "sobi")
-ts_ladle2 <- ladle(ts_data, 500, "fixed", 60, "sobi")
-ts_ladle3 <- ladle(ts_data, 250, "stationary", 1/40, "sobi")
-ts_ladle4 <- ladle(ts_data, 250, "stationary", 1/60, "sobi")
-ts_ladle5 <- ladle(ts_data, 5, "fixed", 60, "sobi")
-ts_ladle6 <- ladle(ts_data, 1000, "fixed", 60, "sobi")
+ts_ladle <- ladle(ts_data, 100, "fixed", 20, "sobi")
+ts_ladle2 <- ladle(ts_data, 100, "fixed", 40, "sobi")
+ts_ladle3 <- ladle(ts_data, 100, "stationary", 1/20, "sobi")
+ts_ladle4 <- ladle(ts_data, 100, "stationary", 1/40, "sobi")
 ```
 
-```{r, eval=FALSE}
-plot(ts_ladle$g, type = "l")
-plot(ts_ladle2$g, type = "l")
-plot(ts_ladle3$g, type = "l")
-plot(ts_ladle4$g, type = "l")
-plot(ts_ladle5$g, type = "l")
-plot(ts_ladle6$g, type = "l")
+Plot the ladle quantities for all four settings
+```{r}
+par(mar = c(4.1, 4.1, 3, 1), mfrow = c(2, 2))
+plot(ts_ladle$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 20")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle$phi, col = "red", lwd = 2)
+lines(ts_ladle$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 40")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle2$phi, col = "red", lwd = 2)
+lines(ts_ladle2$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 20")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle3$phi, col = "red", lwd = 2)
+lines(ts_ladle3$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 40")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle4$phi, col = "red", lwd = 2)
+lines(ts_ladle4$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+```
+
+Plot the ladle plots or save the ladle plots as a pdf file
+```{r, eval = FALSE}
+#pdf("Ladle estimates ts.pdf", width = 7, height = 7)
+par(mar = c(4.1, 4.1, 3, 1), mfrow = c(2, 2))
+plot(ts_ladle$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 20")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle$phi, col = "red", lwd = 2)
+lines(ts_ladle$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 40")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle2$phi, col = "red", lwd = 2)
+lines(ts_ladle2$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 20")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle3$phi, col = "red", lwd = 2)
+lines(ts_ladle3$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+
+plot(ts_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 40")
+axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+lines(ts_ladle4$phi, col = "red", lwd = 2)
+lines(ts_ladle4$g, col = "purple", lwd = 2)
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+```
+### Plots and summaries for timeseries.dat
+
+# Plots and summaries for timeseries.dat
+
+Plot timeseries.dat or save as a pdf file
+```{r}
+#pdf("Time series data.pdf", width = 10, height = 5)
+plot.ts(ts_data, cex.axis = 0.8, main = "")
+```
+
+Print the summary
+```{r}
+summary(ts_data)
 ```
 
 # Task 2: Bayesian mixture modelling with MCMC
-
 
 
 
