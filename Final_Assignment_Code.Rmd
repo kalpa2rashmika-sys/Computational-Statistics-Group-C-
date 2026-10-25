@@ -18,6 +18,10 @@ knitr::opts_chunk$set(
   fig.align = "center"
 )
 
+if (!requireNamespace("JADE", quietly = TRUE)) {
+  install.packages("JADE")
+}
+
 library(JADE)
 ```
 
