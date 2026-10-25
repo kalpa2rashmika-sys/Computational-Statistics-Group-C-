@@ -5,6 +5,9 @@ date: "2026-10-24"
 output:
   html_document:
     df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
   pdf_document: default
 ---
 
@@ -766,11 +769,11 @@ The average maximum deviation of the contemporaneous correlation matrix is 0.076
 
 ### Answer:
 
-The function $f_0(k)$ is defined for $k=1,\dots,p-1$ as $\frac{1}{n}\sum_{j=1}^n(1-|\text{det}(\hat{B}_k^T B_{k,j}^*)|)$, where $\hat{B}_k^T$ are the first $k$ columns of the joint diagonaliser computed from the original sample and $B_{k,j}^*$ are the first $k$ columns of the joint diagonaliser computed from the $j$th bootstrap sample, and $f_0(0)=0$. The function $f(k)$ is then extracted from $f_0(k)$ by normalising in the following way: $f(k)=f_0(k)/1+(\sum_{l=0}^{p-1}f_0(l))$.
+The function $f_0(k)$ is defined for $k=1,\dots,p-1$ as $\frac{1}{n}\sum_{j=1}^n(1-|\text{det}(\hat{B}_k^T B_{k,j}^*)|)$, where $\hat{B}_k^T$ are the first $k$ columns of the joint diagonaliser computed from the original sample and $B_{k,j}^*$ are the first $k$ columns of the joint diagonaliser computed from the $j$th bootstrap sample, and $f_0(0)=0$. The function $f(k)$ is then extracted from $f_0(k)$ by normalising in the following way: $f(k) = \frac{f_0(k)}{1 + \sum_{l=0}^{p-1} f_0(l)}$
 
-The function $\varphi(k)$ is defined with the diagonal elements of $\Lambda$, $\lambda_0^2,\lambda_1^2,\dots,\lambda_{p-1}^2$. The diagonal elements are in a decreasing order. The (normalised) function $\varphi(k)=\lambda_k^2/(1+\sum_{l=0}^{p-1}\lambda_l^2$.
+The function $\varphi(k)$ is defined with the diagonal elements of $\Lambda$, $\lambda_0^2,\lambda_1^2,\dots,\lambda_{p-1}^2$. The diagonal elements are in a decreasing order. The (normalised) function $\varphi(k)=\lambda_k^2/(1+\sum_{l=0}^{p-1}\lambda_l^2)$.
 
-After obtaining $f$ and $\varphi$, obtaining the ladle function $g$ is easy. The ladle function is defined as $g(k) = f(k) + \varphi(k)$. The ladle estimator for the dimension will be $\hat{q} = \argmin \{g(q)\}$.
+After obtaining $f$ and $\varphi$, obtaining the ladle function $g$ is easy. The ladle function is defined as $g(k) = f(k) + \varphi(k)$. The ladle estimator for the dimension will be $\hat{q} = \operatorname{arg\,min}_k \, g(k)$.
 
 In the ladle function $g$, the information represented by the bootstrap-variability is found in the normalised variance function $f$. This is quite obvious, because it is the only quantity in $g$ that contains components stemming from bootstrapping. The variance function $f_0$ is a way of finding out the average variance of the space, which is spanned by the first $k$ vectors. The information represented by the eigenvalues is found mainly in $\varphi$, but also in $f$. The function $\varphi$ is essentially a scree plot, which contains the diagonal elements of the matrix $\varLambda$ calculated with either AMUSE or SOBI. These values are seen as eigenvalues.
 
