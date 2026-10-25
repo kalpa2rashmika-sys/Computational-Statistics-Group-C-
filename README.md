@@ -2,7 +2,7 @@
 
 The final version of the code can be found in the file "Final_Assignment_Code.Rmd" file or alternatively in the "Final_Assignment_Code.html" file.
 
-The final report can also be found in the file "Computational_Statistics_Final_Report.pdf" file.
+The final report can also be found in the file "Computational_Statistics_Final_Report.pdf".
 
 Task 01:
 A,B-Zhuoyan by 11th
