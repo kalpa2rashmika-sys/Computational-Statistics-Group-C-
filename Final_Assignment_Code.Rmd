@@ -15,7 +15,8 @@ knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
   warning = FALSE,
-  fig.align = "center"
+  fig.align = "center",
+  error=TRUE
 )
 
 library(JADE)
@@ -616,9 +617,9 @@ plot_index <- function() {
 
 plot_index()                                          # shown in the Rmd
 
-pdf("index_patterns.pdf", width = 6.5, height = 2.3)  # saved as pdf
-plot_index()
-dev.off()
+#pdf("index_patterns.pdf", width = 6.5, height = 2.3)  # saved as pdf
+#plot_index()
+#dev.off()
 ```
 
 The iid panel shows scattered points with no structure. The fixed-block panel shows
@@ -657,9 +658,9 @@ plot_acf_boot <- function() {
 
 plot_acf_boot()                                  
 
-pdf("bootstrap_acf.pdf", width = 5, height = 3.2)  # saved as pdf
-plot_acf_boot()
-dev.off()
+#pdf("bootstrap_acf.pdf", width = 5, height = 3.2)  # saved as pdf
+#plot_acf_boot()
+#dev.off()
 ```
 
 The original series has strong serial dependence (lag-1 average ACF about
@@ -881,47 +882,58 @@ t_ladle8 <- ladle(sim_data, 200, "fixed", 60, "amuse")
 
 Plot the results
 ```{r}
-plot(t_ladle1$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+exprphi <- expression(phi)
+par(mfrow = c(2,2),mar = c(4.1, 4.1, 1, 1))
+plot(t_ladle1$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle1$phi, col = "red")
 lines(t_ladle1$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+plot(t_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle2$phi, col = "red")
 lines(t_ladle2$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+plot(t_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle3$phi, col = "red")
 lines(t_ladle3$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+plot(t_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle4$phi, col = "red")
 lines(t_ladle4$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 ```
 
 ```{r}
-plot(t_ladle5$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+par(mfrow = c(2,2),mar = c(4.1, 4.1, 1, 1))
+plot(t_ladle5$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle5$phi, col = "red")
 lines(t_ladle5$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle6$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k")
+plot(t_ladle6$f, type = "l", xaxt = "n", ylim = c(0,.6), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle6$phi, col = "red")
 lines(t_ladle6$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle7$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+plot(t_ladle7$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle7$phi, col = "red")
 lines(t_ladle7$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 
-plot(t_ladle8$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k")
+plot(t_ladle8$f, type = "l", xaxt = "n", ylim = c(0,.4), xlab = "k", ylab = "Criterion")
 axis(1, at = seq(1,4, by = 1), labels = c("0", "1", "2", "3"))
 lines(t_ladle8$phi, col = "red")
 lines(t_ladle8$g, col = "purple")
+legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
 ```
 All of the ladle estimators agree on that the signal dimension is 2, which is the result we hoped for.
 
@@ -1032,15 +1044,16 @@ acf(sim[,10], main = "Noise 5")
 ```
 Save the time series plot as a pdf file
 ```{r}
-pdf("Simulation.pdf", width = 12, height = 5)
-plot.ts(sim, ylab = 1, main = "", cex.lab = 0.7)
+#pdf("Simulation.pdf", width = 12, height = 5)
+#plot.ts(sim, ylab = 1, main = "", cex.lab = 0.7)
+#dev.off()
 ```
 
-Save the autocorrelation plots as a pdf file
+Save the autocorrelation plots as a pdf file or plot it
 ```{r}
 titles <- c("ARMA(0.6; (0, -0.4))", "ARMA((0.4, 0.1, 0.3); (0.2, 0.4))", "AR(0.4)", "MA(0.5, 0.3, 0.1, 0.2)", "AR(0.1, 0.1, 0.3)", "Noise 1", "Noise 2", "Noise 3", "Noise 4", "Noise 5")
 
-pdf("Autocorrelation sim.pdf", width = 7, height = 9.33)
+#pdf("Autocorrelation sim.pdf", width = 7, height = 9.33)
 layout(matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), 5, 2, byrow = FALSE))
 
 par(mar = c(2.1, 4.1, 2.1, 1.1))
@@ -1049,6 +1062,7 @@ for(k in 1:10){
   acf(sim[,k], main = "")
   title(titles[k], line = 0.5, cex.main = 1)
 }
+#dev.off()
 ```
 
 ### Simulation for stationary block bootstrap with SOBI
@@ -1459,6 +1473,7 @@ barplot_prep(min2000_fixed_amuse_20, 10),
 barplot_prep(min2000_fixed_amuse_40, 10)), nrow = 10) , col = colour, horiz = T, las = 1, cex.names = 0.55, main = "T=2000")
 
 legend("topleft", inset = c(-0.2,0.0), c("1", "2", "3", "4", "5", "6", "7", "8", "9"), cex = 1, fill = colour)
+#dev.off()
 ```
 
 Calculate Monte Carlo variability
@@ -1471,10 +1486,59 @@ g1000_stationary_sobi_20_mat <- do.call(rbind, g1000_stationary_sobi_20)
 g2000_stationary_sobi_20_mat <- do.call(rbind, g2000_stationary_sobi_20)
 ```
 
+```{r}
+g200_stationary_sobi_40_mat <- do.call(rbind, g200_stationary_sobi_40)
+g500_stationary_sobi_40_mat <- do.call(rbind, g500_stationary_sobi_40)
+g1000_stationary_sobi_40_mat <- do.call(rbind, g1000_stationary_sobi_40)
+g2000_stationary_sobi_40_mat <- do.call(rbind, g2000_stationary_sobi_40)
+```
+
+```{r}
+g200_stationary_amuse_20_mat <- do.call(rbind, g200_stationary_amuse_20)
+g500_stationary_amuse_20_mat <- do.call(rbind, g500_stationary_amuse_20)
+g1000_stationary_amuse_20_mat <- do.call(rbind, g1000_stationary_amuse_20)
+g2000_stationary_amuse_20_mat <- do.call(rbind, g2000_stationary_amuse_20)
+```
+
+```{r}
+g200_stationary_amuse_40_mat <- do.call(rbind, g200_stationary_amuse_40)
+g500_stationary_amuse_40_mat <- do.call(rbind, g500_stationary_amuse_40)
+g1000_stationary_amuse_40_mat <- do.call(rbind, g1000_stationary_amuse_40)
+g2000_stationary_amuse_40_mat <- do.call(rbind, g2000_stationary_amuse_40)
+```
+
+```{r}
+g200_fixed_sobi_20_mat <- do.call(rbind, g200_fixed_sobi_20)
+g500_fixed_sobi_20_mat <- do.call(rbind, g500_fixed_sobi_20)
+g1000_fixed_sobi_20_mat <- do.call(rbind, g1000_fixed_sobi_20)
+g2000_fixed_sobi_20_mat <- do.call(rbind, g2000_fixed_sobi_20)
+```
+
+```{r}
+g200_fixed_sobi_40_mat <- do.call(rbind, g200_fixed_sobi_40)
+g500_fixed_sobi_40_mat <- do.call(rbind, g500_fixed_sobi_40)
+g1000_fixed_sobi_40_mat <- do.call(rbind, g1000_fixed_sobi_40)
+g2000_fixed_sobi_40_mat <- do.call(rbind, g2000_fixed_sobi_40)
+```
+
+```{r}
+g200_fixed_amuse_20_mat <- do.call(rbind, g200_fixed_amuse_20)
+g500_fixed_amuse_20_mat <- do.call(rbind, g500_fixed_amuse_20)
+g1000_fixed_amuse_20_mat <- do.call(rbind, g1000_fixed_amuse_20)
+g2000_fixed_amuse_20_mat <- do.call(rbind, g2000_fixed_amuse_20)
+```
+
+```{r}
+g200_fixed_amuse_40_mat <- do.call(rbind, g200_fixed_amuse_40)
+g500_fixed_amuse_40_mat <- do.call(rbind, g500_fixed_amuse_40)
+g1000_fixed_amuse_40_mat <- do.call(rbind, g1000_fixed_amuse_40)
+g2000_fixed_amuse_40_mat <- do.call(rbind, g2000_fixed_amuse_40)
+```
+
 Save the boxplots of the row means of the ladle function for each setting as a pdf file or plot them
 ```{r}
 #pdf("mc variability.pdf", width = 7, height = 7)
-par(mfrow = c(3, 3), mar = c(3, 3, 2, 1) + 0.1)
+#par(mfrow = c(3, 3), mar = c(3, 3, 2, 1) + 0.1)
 boxplot(rowMeans(g200_stationary_sobi_20_mat), rowMeans(g500_stationary_sobi_20_mat), rowMeans(g1000_stationary_sobi_20_mat), rowMeans(g2000_stationary_sobi_20_mat), names = c("200", "500", "1000", "2000"), main = "S_S_20")
 boxplot(rowMeans(g200_stationary_sobi_40_mat), rowMeans(g500_stationary_sobi_40_mat), rowMeans(g1000_stationary_sobi_40_mat), rowMeans(g2000_stationary_sobi_40_mat), names = c("200", "500", "1000", "2000"), main = "S_S_40")
 
@@ -1486,6 +1550,7 @@ boxplot(rowMeans(g200_fixed_sobi_40_mat), rowMeans(g500_fixed_sobi_40_mat), rowM
 
 boxplot(rowMeans(g200_fixed_amuse_20_mat), rowMeans(g500_fixed_amuse_20_mat), rowMeans(g1000_fixed_amuse_20_mat), rowMeans(g2000_fixed_amuse_20_mat), names = c("200", "500", "1000", "2000"), main = "A_F_20")
 boxplot(rowMeans(g200_fixed_amuse_40_mat), rowMeans(g500_fixed_amuse_40_mat), rowMeans(g1000_fixed_amuse_40_mat), rowMeans(g2000_fixed_amuse_40_mat), names = c("200", "500", "1000", "2000"), main = "A_F_40")
+#dev.off()
 ```
 
 
@@ -1504,36 +1569,8 @@ ts_ladle3 <- ladle(ts_data, 100, "stationary", 1/20, "sobi")
 ts_ladle4 <- ladle(ts_data, 100, "stationary", 1/40, "sobi")
 ```
 
-Plot the ladle quantities for all four settings
-```{r}
-par(mar = c(4.1, 4.1, 3, 1), mfrow = c(2, 2))
-plot(ts_ladle$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 20")
-axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
-lines(ts_ladle$phi, col = "red", lwd = 2)
-lines(ts_ladle$g, col = "purple", lwd = 2)
-legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
-
-plot(ts_ladle2$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 40")
-axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
-lines(ts_ladle2$phi, col = "red", lwd = 2)
-lines(ts_ladle2$g, col = "purple", lwd = 2)
-legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
-
-plot(ts_ladle3$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 20")
-axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
-lines(ts_ladle3$phi, col = "red", lwd = 2)
-lines(ts_ladle3$g, col = "purple", lwd = 2)
-legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
-
-plot(ts_ladle4$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Stationary 40")
-axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
-lines(ts_ladle4$phi, col = "red", lwd = 2)
-lines(ts_ladle4$g, col = "purple", lwd = 2)
-legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
-```
-
 Plot the ladle plots or save the ladle plots as a pdf file
-```{r, eval = FALSE}
+```{r}
 #pdf("Ladle estimates ts.pdf", width = 7, height = 7)
 par(mar = c(4.1, 4.1, 3, 1), mfrow = c(2, 2))
 plot(ts_ladle$f, type = "l", xaxt = "n", ylim = c(0,.25), xlab = "k", ylab = "Criterion", lwd = 2, main = "Fixed 20")
@@ -1559,6 +1596,7 @@ axis(1, at = seq(1, 10, by = 1), labels = c("0", "1", "2", "3", "4", "5", "6", "
 lines(ts_ladle4$phi, col = "red", lwd = 2)
 lines(ts_ladle4$g, col = "purple", lwd = 2)
 legend("topright", legend = c("f", exprphi, "g"), col = c("black", "red", "purple"), pch = 16)
+#dev.off()
 ```
 ### Plots and summaries for timeseries.dat
 
@@ -1568,6 +1606,7 @@ Plot timeseries.dat or save as a pdf file
 ```{r}
 #pdf("Time series data.pdf", width = 10, height = 5)
 plot.ts(ts_data, cex.axis = 0.8, main = "")
+#dev.off()
 ```
 
 Print the summary
@@ -2299,7 +2338,7 @@ data_overlap <- simulate_mixture(
 )
 
 
-pdf("Clearly_Separated.pdf", width = 8, height = 6)
+#pdf("Clearly_Separated.pdf", width = 8, height = 6)
 
 par(mar = c(3, 3, 2, 1))
 
@@ -2309,9 +2348,9 @@ hist(data_sep$y,
      xlab = "Y",
      probability = TRUE)
 
-dev.off()
+#dev.off()
 
-pdf("Substantially_Overlapping.pdf", width = 8, height = 6)
+#pdf("Substantially_Overlapping.pdf", width = 8, height = 6)
 
 par(mar = c(3, 3, 2, 1))
 
@@ -2321,7 +2360,7 @@ hist(data_overlap$y,
      xlab = "Y",
      probability = TRUE)
 
-dev.off()
+#dev.off()
 
 
 ```
@@ -2382,7 +2421,7 @@ keep_overlap <- lapply(chains_overlap, function(x) {x$draws[-(1:burnin), ]})
 ```
 
 ```{r T2 B3}
-pdf("MCMC.pdf", width = 8, height = 6)
+#pdf("MCMC.pdf", width = 8, height = 6)
 
 par(mfrow = c(2, 4), mar = c(3, 3, 2, 1))
 
@@ -2408,7 +2447,7 @@ for (parameter in c("mu1", "mu2", "pi", "sigma2")) {
   )
 }
 
-dev.off()
+#dev.off()
 
 ```
 
@@ -2459,7 +2498,7 @@ plot_chains <- function(chains, parameter, title) {
 
 ```{r T2 B5}
 
-pdf("MCMC_mu1.pdf", width = 8, height = 6)
+#pdf("MCMC_mu1.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -2473,13 +2512,13 @@ plot_chains(
   title = "Overlapping: mu1"
 )
 
-dev.off()
+#dev.off()
 
 ```
 
 ```{r T2 B6}
 
-pdf("MCMC_mu2.pdf", width = 8, height = 6)
+#pdf("MCMC_mu2.pdf", width = 8, height = 6)
 
 
 plot_chains(
@@ -2494,13 +2533,13 @@ plot_chains(
   title = "Overlapping: mu2"
 )
 
-dev.off()
+#dev.off()
 
 ```
 
 ```{r T2 B7}
 
-pdf("MCMC_pi.pdf", width = 8, height = 6)
+#pdf("MCMC_pi.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -2514,14 +2553,14 @@ plot_chains(
   title = "Overlapping: pi"
 )
 
-dev.off()
+#dev.off()
 
 
 ```
 
 ```{r T2 B8}
 
-pdf("MCMC_sigma2.pdf", width = 8, height = 6)
+#pdf("MCMC_sigma2.pdf", width = 8, height = 6)
 
 plot_chains(
   keep_sep,
@@ -2535,7 +2574,7 @@ plot_chains(
   title = "Overlapping: sigma2"
 )
 
-dev.off()
+#dev.off()
 
 
 ```
@@ -2623,10 +2662,12 @@ print(rhat_table)
 
 #Autocorrelation
 
-pdf("Autocorrelation.pdf", width = 8, height = 6)
+#pdf("Autocorrelation.pdf", width = 8, height = 6)
 
 # Autocorrelation - Clearly separated mixture
-par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+par(mfrow = c(2, 2),
+    mar = c(4.5, 4.5, 3, 1),
+    oma = c(1, 1, 1, 1))
 
 acf(sep_ordered[[1]]$mu1, main = "Separated: mu1")
 acf(sep_ordered[[1]]$mu2, main = "Separated: mu2")
@@ -2636,7 +2677,9 @@ acf(sep_ordered[[1]]$sigma2, main = "Separated: sigma2")
 
 
 # Autocorrelation - Overlapping mixture
-par(mfrow = c(2, 2), mar = c(3, 3, 2, 1))
+par(mfrow = c(2, 2),
+    mar = c(4.5, 4.5, 3, 1),
+    oma = c(1, 1, 1, 1))
 
 acf(overlap_ordered[[1]]$mu1, main = "Overlapping: mu1")
 acf(overlap_ordered[[1]]$mu2, main = "Overlapping: mu2")
@@ -2644,7 +2687,7 @@ acf(overlap_ordered[[1]]$pi, main = "Overlapping: pi")
 acf(overlap_ordered[[1]]$sigma2, main = "Overlapping: sigma2")
 
 
-dev.off()
+#dev.off()
 
 
 ```
@@ -2794,7 +2837,7 @@ draws <- chains_sep_c[[1]]$draws
 burnin <- 2000
 draws <- draws[-(1:burnin), ]
 
-pdf("lable_mu.pdf", width = 8, height = 6)
+#pdf("lable_mu.pdf", width = 8, height = 6)
 
 par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
 
@@ -2816,12 +2859,12 @@ for (j in 1:2) {
   
 }
 
-dev.off()
+#dev.off()
 
 
 #Label switching for pi
 
-pdf("lable_pi.pdf", width = 8, height = 6)
+#pdf("lable_pi.pdf", width = 8, height = 6)
 
 par(mfrow = c(1, 2), mar = c(3, 3, 2, 1))
 
@@ -2843,7 +2886,7 @@ for (j in 1:2) {
   abline(h = 0.5, col = "red", lty = 2)
 }
 
-dev.off()
+#dev.off()
 
 ```
 
@@ -3220,9 +3263,9 @@ plot_fit <- function() {
 
 plot_fit()                                           
 
-pdf("faithful_fit.pdf", width = 7, height = 4.5)      # saved as pdf
-plot_fit()
-dev.off()
+#pdf("faithful_fit.pdf", width = 7, height = 4.5)      # saved as pdf
+#plot_fit()
+#dev.off()
 ```
 
 The posterior mean mixture has its two peaks at about 2.0 and 4.3 minutes, in line with the two modes of the histogram, and the density between them is close to zero. The kernel density estimate has lower peaks and a higher valley than the fitted mixture. The 95% band is narrow, but it only reflects the uncertainty in the parameters, not how well the model fits. The fit is not perfect: the highest histogram bar of the short eruptions (near 1.8 minutes) is well above the fitted density, the mixture puts some density below the shortest observed duration (about 1.6 minutes), and it lies below the histogram on the left side of the long group, between about 3.3 and 3.6 minutes.
@@ -3247,9 +3290,9 @@ plot_alloc <- function() {
 
 plot_alloc()                                          
 
-pdf("allocation.pdf", width = 7, height = 3.5)         # saved as pdf
-plot_alloc()
-dev.off()
+#pdf("allocation.pdf", width = 7, height = 3.5)         # saved as pdf
+#plot_alloc()
+#dev.off()
 
 cat("Observations with P(high) > 0.5:", sum(p_high > 0.5))
 cat("Observations with 0.05 < P(high) < 0.95:", sum(p_high > 0.05 & p_high < 0.95))
