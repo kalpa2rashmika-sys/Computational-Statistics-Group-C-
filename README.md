@@ -1,5 +1,7 @@
 # Computational-Statistics-Group-C-
 
+The final version of the code can be found in the file "Final_Assignment_Code.Rmd" file or alternatively in the "Final_Assignment_Code.html" file.
+
 Task 01:
 A,B-Zhuoyan by 11th
 C,D,E-Elsa by 16th
